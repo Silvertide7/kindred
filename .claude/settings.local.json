@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -sL \"https://api.github.com/repos/Tschipp/CallableHorses/contents/src/main/java?ref=1.20\")",
+      "Bash(gh api *)",
+      "Bash(curl -sL \"https://raw.githubusercontent.com/Tschipp/CallableHorses/1.20/README.md\")",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); [print\\(t['path']\\) for t in d['tree'] if t['type']=='blob']\")",
+      "Bash(curl -sL \"https://api.github.com/repos/Tschipp/CallableHorses/git/trees/9874aa9705559b071cc61e398bd70ea962f1086d?recursive=1\")"
+    ]
+  }
+}

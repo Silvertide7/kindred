@@ -1,4 +1,4 @@
-# Mount Summon — Possible Features
+# Pet Summon — Possible Features
 
 Catalog of features to consider, grouped by scope. Treat tier 1 as the MVP definition; everything below is opt-in. Not a roadmap — a menu.
 
@@ -6,20 +6,28 @@ Catalog of features to consider, grouped by scope. Treat tier 1 as the MVP defin
 
 ## Tier 1 — Core (MVP)
 
-The minimum to ship something that beats CallableHorses on day one.
+The minimum to ship.
 
-- **Multi-mount roster**, configurable max (default 5). CallableHorses caps at one — this is the headline differentiator.
+- **Multi-pet roster**, configurable max (default 5).
 - **Keybind opens a custom screen.** No items, no commands required for normal play. Default key unbound (let the user pick) to avoid conflicts.
-- **Claim flow**: from the screen, arm "claim next interaction"; right-click a bondable mount within N seconds to bond.
+- **Direct summon keybind** — summons the player's **active pet**, bypassing the screen. Active pet is set explicitly from the roster screen (star icon per row, click to toggle), not derived from last-summoned. Clicking Summon on a different row in the screen does not change the active pet — that's what makes "summon my dog as a one-time thing while my horse stays active" work.
+  - Storage: `Optional<UUID> activePetId` on `BondRoster`. Cleared automatically when the active bond is broken or the roster goes empty. Not auto-set from first claim — leave empty until user explicitly sets one.
+  - Fallback when no active is set: oldest-bonded.
+  - New packet `C2SSetActivePet(Optional<UUID> bondId)` — server validates the bondId is in the player's roster; empty Optional clears.
+  - `BondView` gains `boolean isActive`. `S2CRosterSync` carries it for free.
+  - Rename keybind lang key `key.petsummon.summon_pet` → `key.petsummon.summon_active_pet` to match the new semantics.
+- **Dismiss / unsummon.** Per-row screen button (and likely a `dismiss_pet` keybind for "dismiss most-recently-summoned"). Snapshots the pet's current state before discarding so summon restores it exactly. Eject any player riding the pet first; stop-riding any vehicle; eject other passengers. Particle + sound on discard so it reads as "recalled" instead of "vanished." Note: this lets a low-HP pet escape death — same shape as cross-dim summon's existing rescue behavior, accepted as feature not exploit. HP is preserved as-is across dismiss/summon — no free heal.
+- **Claim flow**: from the screen, arm "claim next interaction"; right-click an eligible tamed pet within N seconds to bond.
 - **Break-bond flow**: per-row button with two-step confirm (alchemical-style 3s arm window).
-- **Summon button** per row → mount walks to you if close, teleports if far in same dim, materializes from stored NBT if in another dim or unloaded.
-- **Cross-dimensional summon** with safe handling — store mount as data when its owner leaves the dim, materialize fresh on summon.
+- **Summon button** per row → pet walks to you if close, teleports if far in same dim, materializes from stored NBT if in another dim or unloaded.
+- **Cross-dimensional summon** with safe handling — store pet as data when its owner leaves the dim, materialize fresh on summon.
 - **Anti-dupe** via per-bond revision counter in player attachment + world `SavedData`. Cancel `EntityJoinLevelEvent` for stale revisions.
 - **Persistence across player death** — `AttachmentType.copyOnDeath(true)` so the roster survives respawn.
-- **Datapack tag** `#mountsummon:bondable` for which entity types can be bonded. Defaults: all `AbstractHorse` (horse, donkey, mule, skeleton, zombie), camels, llamas.
-- **Server-side configs** (`ModConfigSpec`): `maxBonds`, `walkRange`, `walkSpeed`, `summonCooldownTicks`, `crossDimAllowed`, `claimWindowSeconds`, `deathIsPermanent`, `autoMount`, `requireSpace`.
-- **Whistle sound + particles** on summon (server-broadcast S2C ack).
-- **Lang file** with all user-facing strings under `mountsummon.*`.
+- **Bond eligibility = vanilla `OwnableEntity` + owner-match.** No allowlist needed; modded pets that implement vanilla ownership work out of the box.
+- **Datapack blocklist tag** `#<modid>:bond_blocklist` — empty by default, server admins add types they don't want bondable.
+- **Server-side configs** (`ModConfigSpec`): `maxBonds`, `requireSaddleable` (mount-only mode), `walkRange`, `walkSpeed`, `summonCooldownTicks`, `crossDimAllowed`, `claimWindowSeconds`, `deathIsPermanent`, `autoMount`, `requireSpace`.
+- **Summon sound + particles** on summon (server-broadcast S2C ack).
+- **Lang file** with all user-facing strings under the mod's namespace.
 
 ---
 
@@ -27,18 +35,27 @@ The minimum to ship something that beats CallableHorses on day one.
 
 Nice things that make it feel finished, but you can ship without them.
 
-- **Rename mounts** from the screen (inline edit; click name, type, save). Stored in `Bond.displayName`, syncs to entity custom name.
-- **Mount preview in the row** — render the entity model at small scale on the left of each row using `InventoryScreen.renderEntityInInventoryFollowsMouse` style or a static front-3/4 view.
-- **Quick stats** per row: speed, jump, max HP, current HP%. Computed from stored NBT.
+- **Rename pets** from the screen (inline edit; click name, type, save). Stored in `Bond.displayName`, syncs to entity custom name.
+- **Pet preview in the menu** — render the entity model with `InventoryScreen.renderEntityInInventoryFollowsMouse`, the same path the vanilla inventory uses for the player preview. Renders the player's *actual* bonded entity (correct variant, equipment, collar, age, custom name) — not a generic species icon.
+  - **Render only the expanded row** (click to expand), not every row simultaneously. Keeps cost bounded as bond count grows. Per-render cost is ~0.1–0.3ms (vanilla) or 2–10× heavier for GeckoLib/Citadel; static-vs-animated is the same cost (animation is tickCount-driven, essentially free).
+  - **NBT lives in `BondView` and ships with `S2CRosterSync`.** Roster sync grows by ~5–15 KB for a typical 5-bond roster, ~50 KB worst case (chested llama with full inventory). Negligible at any realistic frequency. Avoids a separate request/response round-trip.
+  - Preview entity constructed client-side via `EntityType.create(clientLevel)` + `entity.load(nbt)`. Never `addFreshEntity` — it exists only for the inventory render API, never enters the world, never ticks. Cache `Map<UUID, LivingEntity>` keyed by bondId. Cleared on screen close; cleared per-bond when the bond's revision changes (NBT may be stale).
+  - Cold-cache stutter on first render of a never-seen-this-session entity type (~50–100ms texture/model load). For click-to-expand UX the stutter happens on the click — acceptable. Optional mitigation: pre-warm all preview entities on screen open if it ever becomes annoying.
+  - Failure modes: `EntityType.create` returns null, NBT corrupted, entity not a `LivingEntity`, server-only type. Fall back to no preview (placeholder box with type name) rather than crashing.
+  - UI shape — choose at implementation time: (a) inline expand the clicked row into a card with the model on the left; or (b) fixed preview pane on one side that displays whichever row is selected. (b) is more discoverable, (a) is more compact.
+- **Quick stats** per row: speed, jump, max HP, current HP%. Computed from stored NBT. Mount-only stats (jump strength) hidden for non-mount pets.
 - **Reorder rows** by drag, or with up/down buttons. Stored as a position int per bond.
-- **Set primary mount** (star icon) — a separate "summon primary" hotkey bypasses the screen entirely.
-- **Search / filter** when many mounts (input field at top, fuzzy on name + type).
+- **Set primary pet** (star icon) — the direct-summon hotkey targets primary instead of last-summoned.
+- **Search / filter** when many pets (input field at top, fuzzy on name + type).
 - **Cooldown indicator** — radial sweep over the summon button using `g.fill` arcs while on cooldown.
 - **Last-known-location** display per row — dimension and approx coords, "X seconds/minutes ago".
-- **Sound packs** — datapack-overridable `mountsummon:summon.whistle` per mount type.
-- **Keybind for "summon last used"** — fast re-summon without opening the screen.
-- **Auto-mount toggle per bond** (overrides global config) — for players who want one combat mount that auto-seats and one packhorse that doesn't.
-- **Confirm dialog when breaking a bond on a mount carrying a chest with items** — prevent accidental loss.
+- **Sound packs** — datapack-overridable summon SFX per entity type.
+- **Auto-mount toggle per bond** (overrides global config; only meaningful for saddleable bonds).
+- **Confirm dialog when breaking a bond on a pet carrying inventory** — prevent accidental loss (chests on donkeys/llamas/mules; wolf armor; etc.).
+- **Smarter spawn placement on summon.** Today the space check is a strict 3×3×3 centered on the player. Improvements:
+  - Search a 5×5 (x/z) footprint around the player for a valid 3×3×3 pocket; pick the closest free spot rather than refusing if the player's exact tile is blocked.
+  - Always spawn on the ground (top of a solid block within the search area), not at the player's feet level when they're mid-air.
+  - Refuse summon when the player is more than ~1 block above the ground (no air-summons). Returns a new `SummonResult.PLAYER_AIRBORNE`.
 
 ---
 
@@ -46,17 +63,17 @@ Nice things that make it feel finished, but you can ship without them.
 
 Worth doing if you commit to the mod long-term.
 
-- **Stable / barn block (optional)** — if you change your mind on "no items/blocks": a block that displays roster mounts as live entities, walking around in pens. Pure visual; bonds are still the source of truth. Disabled by default.
-- **Mount equipment persistence** — saddle, armor, chest contents. Already covered if you snapshot full NBT, but explicitly tested as a feature.
+- **Custom ownership for non-`OwnableEntity` saddleables** (pigs, striders) — a `SaddleOwner` entity attachment written when first saddled by an unowned player. Unblocks bonding pigs/striders.
+- **Stable / barn block (optional)** — if you change your mind on "no items/blocks": a block that displays roster pets as live entities. Pure visual; bonds are still the source of truth. Disabled by default.
+- **Equipment persistence** — saddle, armor, chest contents, wolf armor. Already covered if you snapshot full NBT, but explicitly tested as a feature.
 - **Revival cost on permadeath** — when `deathIsPermanent=true`, optionally allow revival by consuming a configurable item (gold/diamond/totem/datapack-defined ingredient list).
-- **XP / leveling per mount** — accumulate XP from time ridden / blocks traveled, unlock perks (extra inventory slot, fall-damage absorb, jump boost).
-- **Mount perks / traits** — random or rare traits (Surefooted: no fall damage, Frostpaws: doesn't slip on ice, Beast of Burden: +chest slots). Datapack-defined.
-- **Trust / loyalty stat** — feeding, riding, brushing increases loyalty; high-loyalty mounts come faster, low-loyalty mounts ignore the first whistle.
-- **Multi-player bonds** — co-bond a mount to a party so both players can summon. Permission-gated.
-- **Banned-zone tag** `#mountsummon:no_summon_dimensions` and `#mountsummon:no_summon_biomes` — datapack control over where summoning is allowed (e.g. block PvP arenas, the End fight).
-- **Claim by lasso** — optional alternate claim flow via a lasso item, for players who'd rather have the bind action be physical. (Conflicts with the "no items" rule — leave off by default.)
+- **XP / leveling per pet** — accumulate XP from time spent near owner / time ridden / kills assisted, unlock perks.
+- **Pet perks / traits** — random or rare traits (Surefooted: no fall damage, Frostpaws: doesn't slip on ice, Beast of Burden: +chest slots, Loyal: faster summon). Datapack-defined.
+- **Trust / loyalty stat** — feeding, brushing, time near owner increases loyalty; high-loyalty pets come faster, low-loyalty pets ignore the first call.
+- **Multi-player bonds** — co-bond a pet to a party so both players can summon. Permission-gated.
+- **Banned-zone tags** `#<modid>:no_summon_dimensions` and `#<modid>:no_summon_biomes` — datapack control over where summoning is allowed (e.g. block PvP arenas, the End fight).
 - **Camel double-seat + llama caravans** — preserve attached llamas in a caravan when summoning the leader.
-- **Mount loadouts** — save a mount's saddle/armor/chest layout as a named loadout, swap presets from the screen.
+- **Pet loadouts** — save a pet's equipment layout as a named loadout, swap presets from the screen (mount-only mostly, but wolf armor counts).
 
 ---
 
@@ -64,28 +81,28 @@ Worth doing if you commit to the mod long-term.
 
 Needed once people deploy this on multiplayer.
 
-- **Permissions** via NeoForge `PermissionAPI` nodes: `mountsummon.claim`, `mountsummon.summon`, `mountsummon.break`, `mountsummon.bypass_cooldown`, `mountsummon.admin.list`, `mountsummon.admin.transfer`.
+- **Permissions** via NeoForge `PermissionAPI` nodes: `<modid>.claim`, `<modid>.summon`, `<modid>.break`, `<modid>.bypass_cooldown`, `<modid>.admin.list`, `<modid>.admin.transfer`.
 - **Admin commands**:
-  - `/mountsummon list <player>` — show bonds.
-  - `/mountsummon transfer <bondId> <newOwner>`.
-  - `/mountsummon revoke <bondId>` — force-remove.
-  - `/mountsummon find <bondId>` — print last-seen dim + pos.
+  - `/petsummon list <player>` — show bonds.
+  - `/petsummon transfer <bondId> <newOwner>`.
+  - `/petsummon revoke <bondId>` — force-remove.
+  - `/petsummon find <bondId>` — print last-seen dim + pos.
 - **Audit log** of bond/break/summon events to a per-world log file (opt-in).
-- **Per-dimension summon allow/denylist** in config (legacy CallableHorses had this — keep it).
-- **Rate limit per player** to prevent spam (server config). Distinct from per-bond cooldown.
-- **Concurrent-summon cap** — limit how many mounts a player can have materialized at once if you ever support multi-active mounts.
+- **Per-dimension summon allow/denylist** in config.
+- **Rate limit per player** to prevent spam. Distinct from per-bond cooldown.
+- **Concurrent-summon cap** — limit how many pets a player can have materialized at once if you ever support multi-active pets.
 
 ---
 
 ## Tier 5 — Compatibility & integrations
 
-- **Curios / Trinkets** — if a "summon whistle" item is ever added, support equipping in a trinket slot. (Default mod has no items, so this is conditional on Tier 3 stable/whistle.)
+- **Curios / Trinkets** — only relevant if Tier 3 adds an item.
 - **JEI / EMI** — only relevant if items/recipes get added.
 - **Carry On / Pickup** — ensure being carried doesn't desync ownership. (Test, don't necessarily code for.)
-- **Iron's Spells & Spellbooks / Apotheosis** — mount enchantments on saddles. Probably nothing to do; just make sure NBT round-trips.
-- **FTB Chunks / OpenPAC / claim mods** — replace CallableHorses' fake-event hack with real claim API queries. Soft-dep where possible.
+- **Iron's Spells & Spellbooks / Apotheosis** — saddle/armor enchantments. Probably nothing to do; just make sure NBT round-trips.
+- **FTB Chunks / OpenPAC / claim mods** — query real claim API for "can I summon here". Soft-dep where possible.
 - **CompactMachines / dimension-bridging mods** — make sure cross-dim summon respects their dimension types.
-- **Citadel / GeckoLib mounts** — many modded horse-likes are not `AbstractHorse`. The datapack tag handles this — verify NBT snapshot/restore preserves the GeckoLib animation state slot.
+- **Citadel / GeckoLib pets** — verify NBT snapshot/restore preserves animation state and other extra-data slots.
 - **Mod menu / Configured** — `ModConfigSpec` already integrates; just make sure category labels are translated.
 
 ---
@@ -94,21 +111,21 @@ Needed once people deploy this on multiplayer.
 
 Cheap wins that delight users.
 
-- **Custom whistle melodies per mount** — datapack-defined note sequences.
-- **Particle trail on summoned mount** for a few seconds (color configurable per bond).
-- **Recall animation** — mount fades in with smoke or sparkles instead of popping.
-- **Mount portrait in screen** — render entity head with `EntityRenderDispatcher` at scale 0.5 in the row.
-- **Achievements / advancements**: bond first mount, bond max roster, summon across all dimensions, ride a bonded mount 10km.
-- **Stats command** — `/mountsummon stats` shows total distance ridden per mount, summons used.
+- **Custom summon SFX per pet type** — datapack-defined.
+- **Particle trail on summoned pet** for a few seconds (color configurable per bond).
+- **Recall animation** — pet fades in with smoke or sparkles instead of popping.
+- **Pet portrait in screen** — render entity head with `EntityRenderDispatcher` at scale 0.5 in the row.
+- **Achievements / advancements**: bond first pet, fill the roster, summon across all dimensions, summon a pet 1000 times.
+- **Stats command** — total distance traveled with each pet, summons used.
 
 ---
 
 ## Explicitly out of scope (don't build these)
 
-- A bind item / whistle item that the player carries. The whole point of the redesign is the keybind+screen. (Reconsider only if Tier 3 lasso comes up.)
-- Player-vs-player mount stealing.
+- A bind item / whistle item that the player carries. The whole point of the design is the keybind+screen.
+- PvP pet stealing or attacking another player's bonded pet.
 - Auto-breeding from the screen.
-- Anything that requires editing vanilla horse AI globally — only modify entities the player has bonded.
+- Anything that requires editing vanilla AI globally — only modify entities the player has bonded.
 
 ---
 

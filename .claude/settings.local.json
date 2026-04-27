@@ -5,7 +5,16 @@
       "Bash(gh api *)",
       "Bash(curl -sL \"https://raw.githubusercontent.com/Tschipp/CallableHorses/1.20/README.md\")",
       "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); [print\\(t['path']\\) for t in d['tree'] if t['type']=='blob']\")",
-      "Bash(curl -sL \"https://api.github.com/repos/Tschipp/CallableHorses/git/trees/9874aa9705559b071cc61e398bd70ea962f1086d?recursive=1\")"
+      "Bash(curl -sL \"https://api.github.com/repos/Tschipp/CallableHorses/git/trees/9874aa9705559b071cc61e398bd70ea962f1086d?recursive=1\")",
+      "Bash(./gradlew compileJava)",
+      "Bash(./gradlew clean *)",
+      "Bash(./gradlew compileJava -Xlint:deprecation)",
+      "Bash(./gradlew compileJava --rerun -Pdeprecation)",
+      "Bash(./gradlew compileJava --warning-mode all)",
+      "Bash(./gradlew compileJava --rerun-tasks)",
+      "Bash(./gradlew compileJava -Pjavac.compilerArgs=\"-Xlint:deprecation\" --rerun-tasks)",
+      "Bash(javac --version)",
+      "Read(//Users/nate/.gradle/caches/**)"
     ]
   }
 }

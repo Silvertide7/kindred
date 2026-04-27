@@ -1,0 +1,10 @@
+{
+  "key.categories.petsummon": "Pet Summon",
+  "key.petsummon.summon_pet": "Summon Pet",
+  "key.petsummon.open_roster": "Open Pet Roster",
+  "petsummon.screen.title": "Pet Roster",
+  "petsummon.screen.empty": "No bonds yet.",
+  "petsummon.screen.summon": "Summon",
+  "petsummon.screen.break": "Break",
+  "petsummon.screen.break_confirm": "Sure?"
+}

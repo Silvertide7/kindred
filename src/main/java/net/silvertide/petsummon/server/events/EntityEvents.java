@@ -1,0 +1,116 @@
+package net.silvertide.petsummon.server.events;
+
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.Vec3;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
+import net.neoforged.neoforge.event.entity.EntityLeaveLevelEvent;
+import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
+import net.silvertide.petsummon.PetSummon;
+import net.silvertide.petsummon.attachment.Bond;
+import net.silvertide.petsummon.attachment.BondRoster;
+import net.silvertide.petsummon.attachment.Bonded;
+import net.silvertide.petsummon.config.Config;
+import net.silvertide.petsummon.registry.ModAttachments;
+import net.silvertide.petsummon.server.BondIndex;
+import net.silvertide.petsummon.server.BondManager;
+import net.silvertide.petsummon.server.OfflineSnapshot;
+import net.silvertide.petsummon.server.PetSummonSavedData;
+
+import java.util.Optional;
+
+@EventBusSubscriber(modid = PetSummon.MODID, bus = EventBusSubscriber.Bus.GAME)
+public final class EntityEvents {
+
+    @SubscribeEvent
+    public static void onEntityJoinLevel(EntityJoinLevelEvent event) {
+        if (!(event.getLevel() instanceof ServerLevel level)) return;
+        Entity entity = event.getEntity();
+        if (!entity.hasData(ModAttachments.BONDED.get())) return;
+
+        Bonded bonded = entity.getData(ModAttachments.BONDED.get());
+        PetSummonSavedData saved = PetSummonSavedData.get(level);
+
+        // Pending disband: bond was broken while this entity was unloaded.
+        // Strip its bonded attachment and let it join as a normal entity.
+        if (saved.isPendingDisband(bonded.bondId())) {
+            entity.removeData(ModAttachments.BONDED.get());
+            saved.clearPendingDisband(bonded.bondId());
+            saved.clearBond(bonded.bondId());
+            return;
+        }
+
+        // Anti-dupe: if this entity carries a stale revision, it's a duplicate of one
+        // that was re-materialized elsewhere. Cancel the join.
+        int worldRevision = saved.getRevision(bonded.bondId());
+        if (bonded.revision() < worldRevision) {
+            event.setCanceled(true);
+            PetSummon.LOGGER.info("[petsummon] cancelled stale duplicate of bond {} (entity rev {} < world rev {})",
+                    bonded.bondId(), bonded.revision(), worldRevision);
+            return;
+        }
+
+        BondIndex.get().track(bonded.bondId(), entity);
+    }
+
+    @SubscribeEvent
+    public static void onEntityLeaveLevel(EntityLeaveLevelEvent event) {
+        if (!(event.getLevel() instanceof ServerLevel level)) return;
+        Entity entity = event.getEntity();
+        if (!entity.hasData(ModAttachments.BONDED.get())) return;
+
+        Bonded bonded = entity.getData(ModAttachments.BONDED.get());
+        BondIndex.get().untrack(bonded.bondId(), entity);
+
+        snapshotEntity(level, entity, bonded);
+    }
+
+    @SubscribeEvent
+    public static void onLivingDeath(LivingDeathEvent event) {
+        Entity entity = event.getEntity();
+        if (!entity.hasData(ModAttachments.BONDED.get())) return;
+        if (!(entity.level() instanceof ServerLevel level)) return;
+
+        Bonded bonded = entity.getData(ModAttachments.BONDED.get());
+
+        if (Config.DEATH_IS_PERMANENT.get()) {
+            ServerPlayer owner = level.getServer().getPlayerList().getPlayer(bonded.ownerUUID());
+            if (owner != null) {
+                BondManager.breakBond(owner, bonded.bondId());
+            } else {
+                PetSummonSavedData.get(level).markKilledOffline(bonded.bondId());
+            }
+            return;
+        }
+
+        // Non-permanent death: do nothing extra here. EntityLeaveLevelEvent fires when
+        // the corpse is removed and snapshots the dead state. Health is restored when
+        // the bond is summoned next (see BondManager.materializeFresh).
+    }
+
+    private static void snapshotEntity(ServerLevel level, Entity entity, Bonded bonded) {
+        CompoundTag nbt = entity.saveWithoutId(new CompoundTag());
+        ResourceKey<Level> dim = level.dimension();
+        Vec3 pos = entity.position();
+
+        ServerPlayer owner = level.getServer().getPlayerList().getPlayer(bonded.ownerUUID());
+        if (owner != null) {
+            BondRoster roster = owner.getData(ModAttachments.BOND_ROSTER.get());
+            Optional<Bond> bond = roster.get(bonded.bondId());
+            if (bond.isPresent()) {
+                Bond updated = bond.get().withSnapshot(nbt, dim, pos);
+                owner.setData(ModAttachments.BOND_ROSTER.get(), roster.with(updated));
+            }
+        } else {
+            PetSummonSavedData.get(level).putOfflineSnapshot(bonded.bondId(), new OfflineSnapshot(nbt, dim, pos));
+        }
+    }
+
+    private EntityEvents() {}
+}

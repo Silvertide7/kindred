@@ -550,6 +550,11 @@ public final class RosterScreen extends Screen {
         return super.mouseReleased(mouseX, mouseY, button);
     }
 
+    /** Called by the cancel-hold packet handler when the player takes damage. */
+    public void cancelRowHold() {
+        rowHold = null;
+    }
+
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
         int n = ClientRosterData.bonds().size();

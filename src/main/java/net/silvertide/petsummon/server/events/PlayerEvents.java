@@ -6,8 +6,12 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.event.entity.living.LivingDamageEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
+import net.neoforged.neoforge.network.PacketDistributor;
+import net.silvertide.petsummon.config.Config;
+import net.silvertide.petsummon.network.packet.S2CCancelHold;
 import net.silvertide.petsummon.PetSummon;
 import net.silvertide.petsummon.attachment.Bond;
 import net.silvertide.petsummon.attachment.BondRoster;
@@ -74,6 +78,13 @@ public final class PlayerEvents {
 
         // Push initial roster snapshot so the keybind has data before the screen opens.
         ServerPacketHandler.sendRosterSync(player);
+    }
+
+    @SubscribeEvent
+    public static void onLivingDamage(LivingDamageEvent.Pre event) {
+        if (!Config.CANCEL_HOLD_ON_DAMAGE.get()) return;
+        if (!(event.getEntity() instanceof ServerPlayer player)) return;
+        PacketDistributor.sendToPlayer(player, new S2CCancelHold());
     }
 
     @SubscribeEvent

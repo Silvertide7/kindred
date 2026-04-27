@@ -53,6 +53,10 @@ public final class Config {
             .comment("Milliseconds to hold the summon keybind to confirm summoning (when no active pet is nearby).")
             .defineInRange("holdToSummonMs", 1000, 100, 10000);
 
+    public static final ModConfigSpec.BooleanValue CANCEL_HOLD_ON_DAMAGE = BUILDER
+            .comment("If true, taking damage cancels any in-progress summon/dismiss hold (mirrors vanilla bow-draw / eating interrupt).")
+            .define("cancelHoldOnDamage", true);
+
     public static final ModConfigSpec SPEC = BUILDER.build();
 
     private Config() {}

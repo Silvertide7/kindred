@@ -13,6 +13,7 @@ import net.silvertide.petsummon.network.packet.C2SOpenRoster;
 import net.silvertide.petsummon.network.packet.C2SSetActivePet;
 import net.silvertide.petsummon.network.packet.C2SSummonBond;
 import net.silvertide.petsummon.network.packet.C2SSummonByKeybind;
+import net.silvertide.petsummon.network.packet.S2CCancelHold;
 import net.silvertide.petsummon.network.packet.S2CRosterSync;
 
 @EventBusSubscriber(modid = PetSummon.MODID, bus = EventBusSubscriber.Bus.MOD)
@@ -31,6 +32,7 @@ public final class Networking {
         registrar.playToServer(C2SDismissBond.TYPE, C2SDismissBond.STREAM_CODEC, ServerPacketHandler::onDismissBond);
 
         registrar.playToClient(S2CRosterSync.TYPE, S2CRosterSync.STREAM_CODEC, ClientPacketHandler::onRosterSync);
+        registrar.playToClient(S2CCancelHold.TYPE, S2CCancelHold.STREAM_CODEC, ClientPacketHandler::onCancelHold);
     }
 
     private Networking() {}

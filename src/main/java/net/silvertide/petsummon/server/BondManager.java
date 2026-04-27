@@ -5,6 +5,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
@@ -103,6 +104,12 @@ public final class BondManager {
         ResourceLocation typeId = BuiltInRegistries.ENTITY_TYPE.getKey(target.getType());
         long now = System.currentTimeMillis();
 
+        // If the pet was already nametagged before binding, carry that name through as
+        // the bond's display name so the roster and any future rename UI start from it.
+        Optional<String> initialName = Optional.ofNullable(target.getCustomName())
+                .map(Component::getString)
+                .filter(s -> !s.isEmpty());
+
         Bond bond = new Bond(
                 bondId,
                 typeId,
@@ -110,7 +117,7 @@ public final class BondManager {
                 level.dimension(),
                 target.position(),
                 revision,
-                Optional.empty(),
+                initialName,
                 now,
                 0L,
                 Optional.empty()
@@ -291,6 +298,10 @@ public final class BondManager {
 
         entity.load(bond.nbtSnapshot());
 
+        // bond.displayName is the source of truth for the pet's name; the snapshot's
+        // CustomName might lag behind (e.g. rename happened while pet was offline).
+        applyDisplayName(entity, bond.displayName());
+
         // Snapshots taken from a dead entity have health=0 plus whatever transient
         // status caused the death (fire ticks, active effects, etc.). On revival,
         // freshen all of it so the pet doesn't reappear mid-burn / mid-poison.
@@ -325,6 +336,21 @@ public final class BondManager {
         GlobalSummonCooldownTracker.get().recordSummon(player.getUUID());
 
         return SummonResult.SUMMONED_FRESH;
+    }
+
+    /**
+     * Sync an entity's in-world {@code customName} (and visibility) with the bond's
+     * display name. Empty bond name clears the nametag entirely. Mirrors what a
+     * vanilla nametag item would do, so renamed pets show their name floating above.
+     */
+    public static void applyDisplayName(Entity entity, Optional<String> displayName) {
+        if (displayName.isPresent()) {
+            entity.setCustomName(Component.literal(displayName.get()));
+            entity.setCustomNameVisible(true);
+        } else {
+            entity.setCustomName(null);
+            entity.setCustomNameVisible(false);
+        }
     }
 
     /**

@@ -53,7 +53,24 @@ public final class PreviewEntityCache {
             PetSummon.LOGGER.warn("[petsummon] Failed to load NBT for preview entity {}: {}", view.entityType(), t.getMessage());
             return null;
         }
+        freshenForPreview(living);
         return living;
+    }
+
+    /**
+     * Strip transient damage/death state from the snapshot so the preview always
+     * renders alive and unhurt — no red hurt-flash, no death-collapse pose, no
+     * fire overlay — regardless of how the pet was when it was last snapshotted.
+     */
+    private static void freshenForPreview(LivingEntity living) {
+        living.setHealth(living.getMaxHealth());
+        living.hurtTime = 0;
+        living.deathTime = 0;
+        living.clearFire();
+        living.removeAllEffects();
+        living.setAirSupply(living.getMaxAirSupply());
+        living.fallDistance = 0F;
+        living.setTicksFrozen(0);
     }
 
     public static void clear() {

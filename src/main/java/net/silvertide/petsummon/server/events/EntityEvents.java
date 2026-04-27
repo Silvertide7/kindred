@@ -1,6 +1,7 @@
 package net.silvertide.petsummon.server.events;
 
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -116,6 +117,14 @@ public final class EntityEvents {
             Optional<Bond> bond = roster.get(bonded.bondId());
             if (bond.isPresent()) {
                 Bond updated = bond.get().withSnapshot(nbt, dim, pos);
+                // Carry through any customName change made via vanilla nametag while
+                // the pet was loaded — keeps the roster in sync with what's in-world.
+                Optional<String> currentName = Optional.ofNullable(entity.getCustomName())
+                        .map(Component::getString)
+                        .filter(s -> !s.isEmpty());
+                if (!currentName.equals(updated.displayName())) {
+                    updated = updated.withDisplayName(currentName);
+                }
                 owner.setData(ModAttachments.BOND_ROSTER.get(), roster.with(updated));
             }
         } else {

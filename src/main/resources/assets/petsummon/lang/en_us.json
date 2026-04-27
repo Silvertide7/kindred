@@ -15,6 +15,7 @@
   "petsummon.screen.preview_unavailable": "(no preview)",
   "petsummon.screen.set_active": "Set Active",
   "petsummon.screen.is_active": "Active",
+  "petsummon.screen.rename": "Rename",
   "petsummon.hud.dismissing": "Dismissing…",
   "petsummon.hud.summoning": "Summoning…",
   "petsummon.summon.no_bonds": "No bonds to summon",

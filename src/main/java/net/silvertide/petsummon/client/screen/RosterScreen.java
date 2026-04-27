@@ -24,6 +24,7 @@ import net.silvertide.petsummon.network.packet.C2SBreakBond;
 import net.silvertide.petsummon.network.packet.C2SClaimEntity;
 import net.silvertide.petsummon.network.packet.C2SDismissBond;
 import net.silvertide.petsummon.network.packet.C2SOpenRoster;
+import net.silvertide.petsummon.network.packet.C2SRenameBond;
 import net.silvertide.petsummon.network.packet.C2SSetActivePet;
 import net.silvertide.petsummon.network.packet.C2SSummonBond;
 import net.silvertide.petsummon.registry.ModTags;
@@ -78,8 +79,12 @@ public final class RosterScreen extends Screen {
     private static final int C_STAR_HOVER = 0xFF8A95A8;
 
     private static final int STAR_COL_W = 16;
-    private static final int SET_ACTIVE_BTN_H = 14;
-    private static final int SET_ACTIVE_BTN_PAD = 4;
+    private static final int ACTION_BTN_H = 14;
+    private static final int ACTION_BTN_GAP = 2;
+    private static final int PANE_BTN_PAD = 4;
+    /** Total vertical space the two stacked pane buttons occupy. */
+    private static final int PANE_BTN_AREA_H = PANE_BTN_PAD + ACTION_BTN_H + ACTION_BTN_GAP + ACTION_BTN_H + PANE_BTN_PAD;
+    private static final int MAX_NAME_LEN = 32;
 
     private int leftPos;
     private int topPos;
@@ -117,6 +122,10 @@ public final class RosterScreen extends Screen {
     /** Bond shown in the preview pane. Null until first sync. Defaults to the active
      *  pet on open; clicking a row body switches it. */
     private UUID selectedBondId = null;
+
+    /** When non-null, that row's name is in inline-edit mode. */
+    private UUID renamingBondId = null;
+    private String renameBuffer = "";
 
     /** Snapshotted at {@link #init()} only — never updated while the screen is open.
      *  Server enforces distance on the actual bind packet. */
@@ -225,15 +234,13 @@ public final class RosterScreen extends Screen {
             return;
         }
 
-        // Reserve space at the bottom of the pane for the Set Active button.
-        int entityRenderBottom = rowsBottom - SET_ACTIVE_BTN_H - SET_ACTIVE_BTN_PAD * 2;
+        int entityRenderBottom = rowsBottom - PANE_BTN_AREA_H;
 
         LivingEntity entity = PreviewEntityCache.getOrBuild(selected);
         if (entity == null) {
             g.drawCenteredString(font, Component.translatable("petsummon.screen.preview_unavailable"),
                     previewX + PREVIEW_W / 2, (rowsTop + entityRenderBottom) / 2 - 4, C_TEXT_MUTED);
         } else {
-            // Adaptive scale: fit ~70% of the smaller pane axis to the entity's bounding box.
             float w = Math.max(0.1F, entity.getBbWidth());
             float h = Math.max(0.1F, entity.getBbHeight());
             int paneH = entityRenderBottom - rowsTop;
@@ -251,19 +258,38 @@ public final class RosterScreen extends Screen {
                     entity);
         }
 
-        // Set Active button at the bottom of the pane.
         int btnX = previewX + 4;
-        int btnY = rowsBottom - SET_ACTIVE_BTN_H - SET_ACTIVE_BTN_PAD;
         int btnW = PREVIEW_W - 8;
+        int setActiveBtnY = rowsBottom - PANE_BTN_PAD - ACTION_BTN_H;
+        int renameBtnY = setActiveBtnY - ACTION_BTN_GAP - ACTION_BTN_H;
+
+        // Rename button (top of stack)
+        boolean editingThis = selected.bondId().equals(renamingBondId);
+        boolean renameHover = !editingThis && inBox(mouseX, mouseY, btnX, renameBtnY, btnW, ACTION_BTN_H);
+        int renameColor = editingThis
+                ? C_BTN_CLAIM_HOVER  // brighter while in edit mode to signal active state
+                : (renameHover ? C_BTN_CLAIM_HOVER : C_BTN_CLAIM);
+        drawButton(g, btnX, renameBtnY, btnW, ACTION_BTN_H,
+                Component.translatable("petsummon.screen.rename"), renameColor);
+
+        // Set Active button (bottom of stack)
         boolean isActive = selected.isActive();
-        boolean hover = !isActive && inBox(mouseX, mouseY, btnX, btnY, btnW, SET_ACTIVE_BTN_H);
-        Component label = isActive
+        boolean setActiveHover = !isActive && inBox(mouseX, mouseY, btnX, setActiveBtnY, btnW, ACTION_BTN_H);
+        Component setActiveLabel = isActive
                 ? Component.translatable("petsummon.screen.is_active")
                 : Component.translatable("petsummon.screen.set_active");
-        int color = isActive
+        int setActiveColor = isActive
                 ? C_STAR_ACTIVE
-                : (hover ? C_BTN_CLAIM_HOVER : C_BTN_CLAIM);
-        drawButton(g, btnX, btnY, btnW, SET_ACTIVE_BTN_H, label, color);
+                : (setActiveHover ? C_BTN_CLAIM_HOVER : C_BTN_CLAIM);
+        drawButton(g, btnX, setActiveBtnY, btnW, ACTION_BTN_H, setActiveLabel, setActiveColor);
+    }
+
+    private int renameBtnY() {
+        return rowsBottom - PANE_BTN_PAD - ACTION_BTN_H - ACTION_BTN_GAP - ACTION_BTN_H;
+    }
+
+    private int setActiveBtnY() {
+        return rowsBottom - PANE_BTN_PAD - ACTION_BTN_H;
     }
 
     private BondView currentSelection() {
@@ -395,8 +421,17 @@ public final class RosterScreen extends Screen {
         drawStar(g, starCx, starCy, starColor);
 
         int textX = x + STAR_COL_W + 4;
-        String name = bond.displayName().orElse(bond.entityType().getPath());
-        g.drawString(font, name, textX, y + 5, C_TEXT);
+        String name;
+        int nameColor = C_TEXT;
+        if (bond.bondId().equals(renamingBondId)) {
+            // Inline edit: show the buffer plus a blinking caret.
+            boolean caretVisible = (System.currentTimeMillis() / 500L) % 2L == 0L;
+            name = renameBuffer + (caretVisible ? "_" : " ");
+            nameColor = 0xFFE7B43B;  // gold tint while editing
+        } else {
+            name = bond.displayName().orElse(bond.entityType().getPath());
+        }
+        g.drawString(font, name, textX, y + 5, nameColor);
 
         String sub = bond.entityType() + " · " + bond.lastSeenDim().getPath();
         g.drawString(font, sub, textX, y + 16, C_TEXT_MUTED);
@@ -495,17 +530,29 @@ public final class RosterScreen extends Screen {
             }
         }
 
-        // "Set Active" button under the preview pane.
+        // Pane action buttons: Rename (top) + Set Active (bottom). Click anywhere else
+        // commits any in-progress rename first, then proceeds normally.
         BondView selectedView = currentSelection();
-        if (selectedView != null && !selectedView.isActive()) {
+        if (selectedView != null) {
             int btnX = previewX + 4;
-            int btnY = rowsBottom - SET_ACTIVE_BTN_H - SET_ACTIVE_BTN_PAD;
             int btnW = PREVIEW_W - 8;
-            if (inBox(mxAll, myAll, btnX, btnY, btnW, SET_ACTIVE_BTN_H)) {
+
+            if (inBox(mxAll, myAll, btnX, renameBtnY(), btnW, ACTION_BTN_H)) {
+                if (renamingBondId != null) commitRename();
+                startRename(selectedView);
+                return true;
+            }
+
+            if (!selectedView.isActive()
+                    && inBox(mxAll, myAll, btnX, setActiveBtnY(), btnW, ACTION_BTN_H)) {
+                if (renamingBondId != null) commitRename();
                 PacketDistributor.sendToServer(new C2SSetActivePet(Optional.of(selectedView.bondId())));
                 return true;
             }
         }
+
+        // Any other click: commit in-progress rename before continuing.
+        if (renamingBondId != null) commitRename();
 
         List<BondView> bonds = ClientRosterData.bonds();
         for (int i = 0; i < bonds.size(); i++) {
@@ -588,6 +635,61 @@ public final class RosterScreen extends Screen {
         }
 
         return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    @Override
+    public boolean charTyped(char codePoint, int modifiers) {
+        if (renamingBondId == null) return super.charTyped(codePoint, modifiers);
+        if (codePoint == '§' || Character.isISOControl(codePoint)) return true;
+        if (renameBuffer.length() < MAX_NAME_LEN) {
+            renameBuffer = renameBuffer + codePoint;
+        }
+        return true;
+    }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (renamingBondId != null) {
+            // Enter (257) / Numpad Enter (335) → commit.
+            if (keyCode == 257 || keyCode == 335) {
+                commitRename();
+                return true;
+            }
+            // Escape (256) → cancel without saving.
+            if (keyCode == 256) {
+                cancelRename();
+                return true;
+            }
+            // Backspace (259) → delete last char.
+            if (keyCode == 259) {
+                if (!renameBuffer.isEmpty()) {
+                    renameBuffer = renameBuffer.substring(0, renameBuffer.length() - 1);
+                }
+                return true;
+            }
+            // Swallow other keys so we don't trigger global keybinds while editing.
+            return true;
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
+    }
+
+    private void startRename(BondView bond) {
+        renamingBondId = bond.bondId();
+        renameBuffer = bond.displayName().orElse("");
+    }
+
+    private void commitRename() {
+        if (renamingBondId == null) return;
+        String trimmed = renameBuffer.trim();
+        Optional<String> newName = trimmed.isEmpty() ? Optional.empty() : Optional.of(trimmed);
+        PacketDistributor.sendToServer(new C2SRenameBond(renamingBondId, newName));
+        renamingBondId = null;
+        renameBuffer = "";
+    }
+
+    private void cancelRename() {
+        renamingBondId = null;
+        renameBuffer = "";
     }
 
     @Override

@@ -10,10 +10,12 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 import net.silvertide.petsummon.attachment.Bond;
 import net.silvertide.petsummon.attachment.BondRoster;
 import net.silvertide.petsummon.config.Config;
+import net.silvertide.petsummon.server.BondIndex;
 import net.silvertide.petsummon.network.packet.C2SBreakBond;
 import net.silvertide.petsummon.network.packet.C2SClaimEntity;
 import net.silvertide.petsummon.network.packet.C2SDismissBond;
 import net.silvertide.petsummon.network.packet.C2SOpenRoster;
+import net.silvertide.petsummon.network.packet.C2SRenameBond;
 import net.silvertide.petsummon.network.packet.C2SSetActivePet;
 import net.silvertide.petsummon.network.packet.C2SSummonBond;
 import net.silvertide.petsummon.network.packet.C2SSummonByKeybind;
@@ -109,6 +111,36 @@ public final class ServerPacketHandler {
                 player.sendSystemMessage(Component.literal("Bind failed: " + result.name()));
             }
         });
+    }
+
+    private static final int MAX_NAME_LEN = 32;
+
+    public static void onRenameBond(C2SRenameBond payload, IPayloadContext context) {
+        context.enqueueWork(() -> {
+            if (!(context.player() instanceof ServerPlayer player)) return;
+            BondRoster roster = player.getData(ModAttachments.BOND_ROSTER.get());
+            Optional<Bond> bond = roster.get(payload.bondId());
+            if (bond.isEmpty()) return;
+            Optional<String> sanitized = payload.newName()
+                    .map(ServerPacketHandler::sanitizeName)
+                    .filter(s -> !s.isEmpty());
+            Bond updated = bond.get().withDisplayName(sanitized);
+            player.setData(ModAttachments.BOND_ROSTER.get(), roster.with(updated));
+            // Mirror the rename onto the live entity so the in-world nametag updates
+            // immediately. Offline pets pick this up on next materialize from displayName.
+            BondIndex.get().find(payload.bondId())
+                    .ifPresent(e -> BondManager.applyDisplayName(e, sanitized));
+            sendRosterSync(player);
+        });
+    }
+
+    private static String sanitizeName(String raw) {
+        if (raw == null) return "";
+        String s = raw.replace("§", "");        // strip Minecraft formatting codes
+        s = s.replaceAll("\\p{Cntrl}", "");          // strip control chars (newlines, tabs, etc.)
+        s = s.trim();
+        if (s.length() > MAX_NAME_LEN) s = s.substring(0, MAX_NAME_LEN);
+        return s;
     }
 
     public static void onSetActivePet(C2SSetActivePet payload, IPayloadContext context) {

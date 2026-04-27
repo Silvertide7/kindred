@@ -53,7 +53,7 @@ public final class KeybindHandler {
             BondView dismissTarget = findNearbyDismissTarget();
             if (dismissTarget != null) {
                 HoldActionState.startDismiss(dismissTarget.bondId(),
-                        Config.HOLD_TO_DISMISS_MS.get());
+                        Config.holdToDismissMs());
                 continue;
             }
 
@@ -69,6 +69,10 @@ public final class KeybindHandler {
                 showActionBar("petsummon.summon.no_active");
                 continue;
             }
+            if (ClientRosterData.isRevivalPending(target.get())) {
+                showActionBar("petsummon.summon.reviving");
+                continue;
+            }
             if (ClientRosterData.isGlobalSummonOnCooldown()) {
                 showActionBar("petsummon.summon.global_cooldown");
                 continue;
@@ -77,7 +81,7 @@ public final class KeybindHandler {
                 showActionBar("petsummon.summon.on_cooldown");
                 continue;
             }
-            HoldActionState.startSummon(Config.HOLD_TO_SUMMON_MS.get());
+            HoldActionState.startSummon(Config.holdToSummonMs());
         }
 
         // Drive the hold timer forward.

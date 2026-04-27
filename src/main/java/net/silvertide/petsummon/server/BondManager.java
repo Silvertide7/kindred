@@ -73,6 +73,7 @@ public final class BondManager {
         NO_SUCH_BOND,
         ON_COOLDOWN,
         GLOBAL_COOLDOWN,
+        REVIVAL_PENDING,
         NO_SPACE,
         PLAYER_AIRBORNE,
         CROSS_DIM_BLOCKED,
@@ -111,7 +112,8 @@ public final class BondManager {
                 revision,
                 Optional.empty(),
                 now,
-                0L
+                0L,
+                Optional.empty()
         );
 
         // First bond claimed becomes active automatically. Subsequent claims keep the
@@ -203,8 +205,15 @@ public final class BondManager {
         long cooldownMs = Config.SUMMON_COOLDOWN_TICKS.get() * 50L;
         if (now - bond.lastSummonedAt() < cooldownMs) return SummonResult.ON_COOLDOWN;
 
+        // Per-bond revival cooldown (after non-permanent death).
+        long revivalCooldownMs = Config.revivalCooldownMs();
+        if (revivalCooldownMs > 0L && bond.diedAt().isPresent()) {
+            long diedAt = bond.diedAt().get();
+            if (now - diedAt < revivalCooldownMs) return SummonResult.REVIVAL_PENDING;
+        }
+
         // Roster-wide spam cooldown.
-        long globalCooldownMs = Config.SUMMON_GLOBAL_COOLDOWN_MS.get();
+        long globalCooldownMs = Config.summonGlobalCooldownMs();
         if (GlobalSummonCooldownTracker.get().remainingMs(player.getUUID(), globalCooldownMs) > 0L) {
             return SummonResult.GLOBAL_COOLDOWN;
         }
@@ -282,9 +291,11 @@ public final class BondManager {
 
         entity.load(bond.nbtSnapshot());
 
-        // Snapshots taken from a dead entity have health=0; restore unless death is permanent.
+        // Snapshots taken from a dead entity have health=0 plus whatever transient
+        // status caused the death (fire ticks, active effects, etc.). On revival,
+        // freshen all of it so the pet doesn't reappear mid-burn / mid-poison.
         if (!Config.DEATH_IS_PERMANENT.get() && entity instanceof LivingEntity living && living.getHealth() <= 0) {
-            living.setHealth(living.getMaxHealth());
+            freshenForRevival(living);
         }
 
         // If the snapshot captured a sitting wolf/cat/etc., stand them up — the player
@@ -306,12 +317,28 @@ public final class BondManager {
         // leave event synchronously and writes a snapshot into the player's roster. Trusting
         // a roster captured before that point would silently drop the leave-event's write.
         BondRoster currentRoster = player.getData(ModAttachments.BOND_ROSTER.get());
-        Bond updated = bond.withRevision(newRevision).withLastSummonedAt(System.currentTimeMillis());
+        Bond updated = bond.withRevision(newRevision)
+                .withLastSummonedAt(System.currentTimeMillis())
+                .withDiedAt(Optional.empty());  // successful materialize IS the revival
         player.setData(ModAttachments.BOND_ROSTER.get(), currentRoster.with(updated));
 
         GlobalSummonCooldownTracker.get().recordSummon(player.getUUID());
 
         return SummonResult.SUMMONED_FRESH;
+    }
+
+    /**
+     * Reset transient post-death state on revival. Health back to max; fire, active
+     * potion effects, freeze ticks, fall distance, and air supply all cleared so the
+     * pet reappears in a clean state instead of mid-burn or mid-poison.
+     */
+    private static void freshenForRevival(LivingEntity living) {
+        living.setHealth(living.getMaxHealth());
+        living.clearFire();
+        living.removeAllEffects();
+        living.setAirSupply(living.getMaxAirSupply());
+        living.fallDistance = 0F;
+        living.setTicksFrozen(0);
     }
 
     /**
@@ -341,7 +368,8 @@ public final class BondManager {
     }
 
     private static void writeSummonTimestamp(ServerPlayer player, Bond bond, BondRoster roster) {
-        Bond updated = bond.withLastSummonedAt(System.currentTimeMillis());
+        // Successful summon also clears any pending revival cooldown — this IS the revival.
+        Bond updated = bond.withLastSummonedAt(System.currentTimeMillis()).withDiedAt(Optional.empty());
         player.setData(ModAttachments.BOND_ROSTER.get(), roster.with(updated));
     }
 

@@ -44,6 +44,16 @@ public final class ClientRosterData {
         return elapsedSinceReceive < bond.cooldownRemainingMs();
     }
 
+    public static boolean isRevivalPending(BondView bond) {
+        return revivalRemainingMsNow(bond) > 0L;
+    }
+
+    /** Live remaining revival cooldown in ms, decayed from the receive-time value. */
+    public static long revivalRemainingMsNow(BondView bond) {
+        long elapsedSinceReceive = System.currentTimeMillis() - lastUpdatedClientMs;
+        return Math.max(0L, bond.revivalRemainingMs() - elapsedSinceReceive);
+    }
+
     public static boolean isGlobalSummonOnCooldown() {
         return globalCooldownRemainingMsNow() > 0L;
     }

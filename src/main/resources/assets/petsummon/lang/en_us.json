@@ -5,6 +5,7 @@
   "petsummon.screen.title": "Pet Roster",
   "petsummon.screen.empty": "No bonds yet.",
   "petsummon.screen.summon": "Summon",
+  "petsummon.screen.respawning": "Respawning %ss",
   "petsummon.screen.dismiss": "Dismiss",
   "petsummon.screen.break": "Break",
   "petsummon.screen.break_confirm": "Sure?",
@@ -19,5 +20,6 @@
   "petsummon.summon.no_bonds": "No bonds to summon",
   "petsummon.summon.no_active": "No active pet set",
   "petsummon.summon.on_cooldown": "Summon on cooldown",
-  "petsummon.summon.global_cooldown": "Recently summoned, wait…"
+  "petsummon.summon.global_cooldown": "Recently summoned, wait…",
+  "petsummon.summon.reviving": "Reviving — wait…"
 }

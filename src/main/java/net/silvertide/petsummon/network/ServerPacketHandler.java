@@ -127,15 +127,20 @@ public final class ServerPacketHandler {
         BondRoster roster = player.getData(ModAttachments.BOND_ROSTER.get());
         long now = System.currentTimeMillis();
         long cooldownMs = Config.SUMMON_COOLDOWN_TICKS.get() * 50L;
+        long revivalCooldownMs = Config.revivalCooldownMs();
         List<BondView> views = roster.bonds().values().stream()
                 .sorted(Comparator.comparingLong(Bond::bondedAt))
                 .map(b -> {
                     long remaining = Math.max(0L, cooldownMs - (now - b.lastSummonedAt()));
-                    return BondView.from(b, roster.isActive(b.bondId()), remaining);
+                    long revivalRemaining = 0L;
+                    if (revivalCooldownMs > 0L && b.diedAt().isPresent()) {
+                        revivalRemaining = Math.max(0L, revivalCooldownMs - (now - b.diedAt().get()));
+                    }
+                    return BondView.from(b, roster.isActive(b.bondId()), remaining, revivalRemaining);
                 })
                 .toList();
         long globalRemaining = GlobalSummonCooldownTracker.get()
-                .remainingMs(player.getUUID(), Config.SUMMON_GLOBAL_COOLDOWN_MS.get());
+                .remainingMs(player.getUUID(), Config.summonGlobalCooldownMs());
         PacketDistributor.sendToPlayer(player, new S2CRosterSync(views, globalRemaining));
     }
 

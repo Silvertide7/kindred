@@ -70,6 +70,7 @@ public final class RosterScreen extends Screen {
     private static final int C_BTN_BREAK_CONFIRM = 0xFFD45A5A;
     private static final int C_BTN_DISMISS = 0xFF6A5A3A;
     private static final int C_BTN_DISMISS_HOVER = 0xFF8A7A52;
+    private static final int C_BTN_DISMISS_DISABLED = 0xFF4A4538;
     private static final int C_BTN_CLAIM = 0xFF3D5C8A;
     private static final int C_BTN_CLAIM_HOVER = 0xFF5278B0;
     private static final int C_STAR_ACTIVE = 0xFFE7B43B;
@@ -415,7 +416,8 @@ public final class RosterScreen extends Screen {
                 && System.currentTimeMillis() < breakArmedExpiresAt;
 
         boolean summonDisabled = ClientRosterData.isGlobalSummonOnCooldown()
-                || ClientRosterData.isOnCooldown(bond);
+                || ClientRosterData.isOnCooldown(bond)
+                || ClientRosterData.isRevivalPending(bond);
         boolean summonHover = !summonDisabled && inBox(mx, my, summonX, btnY, summonW, btnH);
 
         // Hold progress (if this row is currently being held for one of these buttons).
@@ -430,8 +432,16 @@ public final class RosterScreen extends Screen {
         int summonColor = summonDisabled
                 ? C_BTN_SUMMON_DISABLED
                 : (summonHover ? C_BTN_SUMMON_HOVER : C_BTN_SUMMON);
+        Component summonLabel;
+        if (ClientRosterData.isRevivalPending(bond)) {
+            long remainingMs = ClientRosterData.revivalRemainingMsNow(bond);
+            int seconds = (int) ((remainingMs + 999L) / 1000L);  // round up
+            summonLabel = Component.translatable("petsummon.screen.respawning", seconds);
+        } else {
+            summonLabel = Component.translatable("petsummon.screen.summon");
+        }
         drawButton(g, summonX, btnY, summonW, btnH,
-                Component.translatable("petsummon.screen.summon"),
+                summonLabel,
                 summonColor,
                 summonHoldProgress);
 
@@ -443,12 +453,16 @@ public final class RosterScreen extends Screen {
                     Component.translatable("petsummon.screen.break_confirm"),
                     confirmHover ? C_BTN_BREAK_CONFIRM : C_BTN_BREAK_HOVER);
         } else {
-            boolean dismissHover = inBox(mx, my, dismissX, btnY, dismissW, btnH);
+            boolean dismissDisabled = ClientRosterData.isRevivalPending(bond);
+            boolean dismissHover = !dismissDisabled && inBox(mx, my, dismissX, btnY, dismissW, btnH);
             boolean breakHover = inBox(mx, my, breakSmallX, btnY, breakSmallW, btnH);
 
+            int dismissColor = dismissDisabled
+                    ? C_BTN_DISMISS_DISABLED
+                    : (dismissHover ? C_BTN_DISMISS_HOVER : C_BTN_DISMISS);
             drawButton(g, dismissX, btnY, dismissW, btnH,
                     Component.translatable("petsummon.screen.dismiss"),
-                    dismissHover ? C_BTN_DISMISS_HOVER : C_BTN_DISMISS,
+                    dismissColor,
                     dismissHoldProgress);
 
             drawButton(g, breakSmallX, btnY, breakSmallW, btnH,
@@ -524,6 +538,11 @@ public final class RosterScreen extends Screen {
             if (inBox(mx, my, summonX, btnY, summonW, btnH)) {
                 // Pre-check cooldowns to avoid wasting a full hold for a guaranteed rejection.
                 LocalPlayer p = Minecraft.getInstance().player;
+                if (ClientRosterData.isRevivalPending(bond)) {
+                    if (p != null) p.displayClientMessage(
+                            Component.translatable("petsummon.summon.reviving"), true);
+                    return true;
+                }
                 if (ClientRosterData.isGlobalSummonOnCooldown()) {
                     if (p != null) p.displayClientMessage(
                             Component.translatable("petsummon.summon.global_cooldown"), true);
@@ -536,7 +555,7 @@ public final class RosterScreen extends Screen {
                 }
                 // Hold-to-confirm. Mirror the keybind contract so screen clicks can't bypass.
                 rowHold = new RowHold(bond.bondId(), RowHoldAction.SUMMON,
-                        System.currentTimeMillis(), Config.HOLD_TO_SUMMON_MS.get());
+                        System.currentTimeMillis(), Config.holdToSummonMs());
                 return true;
             }
 
@@ -550,8 +569,10 @@ public final class RosterScreen extends Screen {
                 }
             } else {
                 if (inBox(mx, my, dismissX, btnY, dismissW, btnH)) {
+                    // Dead pets have no entity to dismiss — block the hold.
+                    if (ClientRosterData.isRevivalPending(bond)) return true;
                     rowHold = new RowHold(bond.bondId(), RowHoldAction.DISMISS,
-                            System.currentTimeMillis(), Config.HOLD_TO_DISMISS_MS.get());
+                            System.currentTimeMillis(), Config.holdToDismissMs());
                     return true;
                 }
                 if (inBox(mx, my, breakSmallX, btnY, breakSmallW, btnH)) {

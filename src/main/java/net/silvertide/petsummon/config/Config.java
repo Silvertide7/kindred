@@ -25,44 +25,60 @@ public final class Config {
             .comment("Cooldown between summons of the same bond, in ticks (20 = 1 second).")
             .defineInRange("summonCooldownTicks", 100, 0, 72000);
 
-    public static final ModConfigSpec.LongValue SUMMON_GLOBAL_COOLDOWN_MS = BUILDER
-            .comment("Per-player cooldown (in ms) between any two summons regardless of which bond. " +
+    public static final ModConfigSpec.IntValue SUMMON_GLOBAL_COOLDOWN_SECONDS = BUILDER
+            .comment("Per-player cooldown (in seconds) between any two summons regardless of which bond. " +
                      "0 disables. Distinct from summonCooldownTicks which only blocks summoning the same pet repeatedly.")
-            .defineInRange("summonGlobalCooldownMs", 10_000L, 0L, Long.MAX_VALUE);
+            .defineInRange("summonGlobalCooldownSeconds", 10, 0, 86400);
+
+    public static final ModConfigSpec.IntValue REVIVAL_COOLDOWN_SECONDS = BUILDER
+            .comment("Per-bond cooldown (in seconds) after a non-permanent death before the bond can be summoned again. " +
+                     "0 disables. Adds weight to deaths without going full permadeath. Has no effect when deathIsPermanent=true.")
+            .defineInRange("revivalCooldownSeconds", 0, 0, 86400);
 
     public static final ModConfigSpec.BooleanValue CROSS_DIM_ALLOWED = BUILDER
             .comment("Allow summoning a pet from another dimension.")
             .define("crossDimAllowed", true);
 
-    public static final ModConfigSpec.IntValue CLAIM_WINDOW_SECONDS = BUILDER
-            .comment("Seconds the player has to right-click an eligible pet after arming a claim from the screen.")
-            .defineInRange("claimWindowSeconds", 30, 1, 600);
-
     public static final ModConfigSpec.BooleanValue DEATH_IS_PERMANENT = BUILDER
             .comment("If true, a bonded pet's death breaks the bond. If false, summoning a dead pet respawns it.")
             .define("deathIsPermanent", false);
-
-    public static final ModConfigSpec.BooleanValue AUTO_MOUNT = BUILDER
-            .comment("If true, the player is auto-seated on a saddleable bond on summon.")
-            .define("autoMount", false);
 
     public static final ModConfigSpec.BooleanValue REQUIRE_SPACE = BUILDER
             .comment("If true, refuse to summon when the 3x3x3 space around the player is obstructed.")
             .define("requireSpace", true);
 
-    public static final ModConfigSpec.IntValue HOLD_TO_DISMISS_MS = BUILDER
-            .comment("Milliseconds to hold the summon keybind to confirm dismissing the active pet (when within 6 blocks).")
-            .defineInRange("holdToDismissMs", 1000, 100, 10000);
+    public static final ModConfigSpec.DoubleValue HOLD_TO_DISMISS_SECONDS = BUILDER
+            .comment("Seconds to hold the summon keybind (or screen Dismiss button) to confirm dismissing the active pet.")
+            .defineInRange("holdToDismissSeconds", 1.0D, 0.1D, 10.0D);
 
-    public static final ModConfigSpec.IntValue HOLD_TO_SUMMON_MS = BUILDER
-            .comment("Milliseconds to hold the summon keybind to confirm summoning (when no active pet is nearby).")
-            .defineInRange("holdToSummonMs", 1000, 100, 10000);
+    public static final ModConfigSpec.DoubleValue HOLD_TO_SUMMON_SECONDS = BUILDER
+            .comment("Seconds to hold the summon keybind (or screen Summon button) to confirm summoning.")
+            .defineInRange("holdToSummonSeconds", 1.0D, 0.1D, 10.0D);
 
     public static final ModConfigSpec.BooleanValue CANCEL_HOLD_ON_DAMAGE = BUILDER
             .comment("If true, taking damage cancels any in-progress summon/dismiss hold (mirrors vanilla bow-draw / eating interrupt).")
             .define("cancelHoldOnDamage", true);
 
     public static final ModConfigSpec SPEC = BUILDER.build();
+
+    // ───── ms helpers ─────
+    // Internal code wants milliseconds for time math; configs are in seconds for users.
+
+    public static long holdToDismissMs() {
+        return Math.round(HOLD_TO_DISMISS_SECONDS.get() * 1000.0D);
+    }
+
+    public static long holdToSummonMs() {
+        return Math.round(HOLD_TO_SUMMON_SECONDS.get() * 1000.0D);
+    }
+
+    public static long summonGlobalCooldownMs() {
+        return SUMMON_GLOBAL_COOLDOWN_SECONDS.get() * 1000L;
+    }
+
+    public static long revivalCooldownMs() {
+        return REVIVAL_COOLDOWN_SECONDS.get() * 1000L;
+    }
 
     private Config() {}
 }

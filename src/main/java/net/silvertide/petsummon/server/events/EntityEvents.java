@@ -89,9 +89,20 @@ public final class EntityEvents {
             return;
         }
 
-        // Non-permanent death: do nothing extra here. EntityLeaveLevelEvent fires when
-        // the corpse is removed and snapshots the dead state. Health is restored when
-        // the bond is summoned next (see BondManager.materializeFresh).
+        // Non-permanent death: stamp diedAt for the revival cooldown (only if the
+        // owner is online; offline-owner case is a known follow-up). EntityLeaveLevelEvent
+        // fires when the corpse is removed and snapshots the dead state; health is
+        // restored when the bond is summoned next (BondManager.materializeFresh).
+        if (Config.revivalCooldownMs() > 0L) {
+            ServerPlayer owner = level.getServer().getPlayerList().getPlayer(bonded.ownerUUID());
+            if (owner != null) {
+                BondRoster roster = owner.getData(ModAttachments.BOND_ROSTER.get());
+                roster.get(bonded.bondId()).ifPresent(b -> {
+                    Bond updated = b.withDiedAt(Optional.of(System.currentTimeMillis()));
+                    owner.setData(ModAttachments.BOND_ROSTER.get(), roster.with(updated));
+                });
+            }
+        }
     }
 
     private static void snapshotEntity(ServerLevel level, Entity entity, Bonded bonded) {

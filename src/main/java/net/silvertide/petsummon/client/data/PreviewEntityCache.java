@@ -61,6 +61,8 @@ public final class PreviewEntityCache {
      * Strip transient damage/death state from the snapshot so the preview always
      * renders alive and unhurt — no red hurt-flash, no death-collapse pose, no
      * fire overlay — regardless of how the pet was when it was last snapshotted.
+     * Also hides the floating nametag so it doesn't overlap the preview render;
+     * the roster row's name still uses {@code bond.displayName()}.
      */
     private static void freshenForPreview(LivingEntity living) {
         living.setHealth(living.getMaxHealth());
@@ -71,6 +73,7 @@ public final class PreviewEntityCache {
         living.setAirSupply(living.getMaxAirSupply());
         living.fallDistance = 0F;
         living.setTicksFrozen(0);
+        living.setCustomNameVisible(false);
     }
 
     public static void clear() {

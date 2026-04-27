@@ -47,8 +47,19 @@ public final class RosterScreen extends Screen {
     private static final int PANEL_WIDTH = 400;
     private static final int ROW_W = 280;
     private static final int PREVIEW_W = 100;
-    private static final int ROW_HEIGHT = 28;
+    private static final int ROW_HEIGHT = 32;
     private static final int ROW_PAD = 4;
+
+    // Row internal layout: name + buttons share the top line, type · dim sits below.
+    private static final int ROW_NAME_Y_OFFSET = 5;
+    private static final int ROW_SUBTITLE_Y_OFFSET = 19;
+
+    // Row button layout — kept in one place so renderRow and mouseClicked stay in sync.
+    private static final int ROW_BTN_H = 14;
+    private static final int ROW_SUMMON_W = 48;
+    private static final int ROW_DISMISS_W = 48;
+    private static final int ROW_BREAK_W = 14;
+    private static final int ROW_BTN_GAP = 4;
     private static final int FOOTER_H = 32;
     private static final int CLAIM_BTN_H = 20;
     private static final long BREAK_CONFIRM_TTL_MS = 3000L;
@@ -84,6 +95,14 @@ public final class RosterScreen extends Screen {
     private static final int PANE_BTN_PAD = 4;
     /** Total vertical space the two stacked pane buttons occupy. */
     private static final int PANE_BTN_AREA_H = PANE_BTN_PAD + ACTION_BTN_H + ACTION_BTN_GAP + ACTION_BTN_H + PANE_BTN_PAD;
+    /** Top padding inside the preview pane — keeps tall entities (horses, llamas)
+     *  from cropping their heads against the panel border. */
+    private static final int PREVIEW_TOP_PAD = 16;
+    /** Pixels the preview pane content extends below the row list's bottom edge.
+     *  Borrows space from the footer area (the bind-hint text is centered across
+     *  the panel, so the right side is empty). Pushes both the entity render and
+     *  the stacked buttons further down. */
+    private static final int PREVIEW_BTM_EXTEND = 14;
     private static final int MAX_NAME_LEN = 32;
 
     private int leftPos;
@@ -192,7 +211,8 @@ public final class RosterScreen extends Screen {
         // Global cooldown indicator (only when active). Right-aligned in title bar.
         if (ClientRosterData.isGlobalSummonOnCooldown()) {
             long remainingMs = ClientRosterData.globalCooldownRemainingMsNow();
-            String text = String.format("Cooldown: %.1fs", remainingMs / 1000.0F);
+            Component text = Component.translatable("petsummon.screen.summon_cooldown",
+                    String.format("%.1f", remainingMs / 1000.0F));
             int tw = font.width(text);
             g.drawString(font, text, leftPos + PANEL_WIDTH - 6 - tw, topPos + 8, C_TEXT_MUTED);
         }
@@ -234,33 +254,45 @@ public final class RosterScreen extends Screen {
             return;
         }
 
-        int entityRenderBottom = rowsBottom - PANE_BTN_AREA_H;
+        int paneBottom = previewBottom();
+        int entityRenderTop = rowsTop + PREVIEW_TOP_PAD;
+        int entityRenderBottom = paneBottom - PANE_BTN_AREA_H;
 
         LivingEntity entity = PreviewEntityCache.getOrBuild(selected);
         if (entity == null) {
             g.drawCenteredString(font, Component.translatable("petsummon.screen.preview_unavailable"),
-                    previewX + PREVIEW_W / 2, (rowsTop + entityRenderBottom) / 2 - 4, C_TEXT_MUTED);
+                    previewX + PREVIEW_W / 2, (entityRenderTop + entityRenderBottom) / 2 - 4, C_TEXT_MUTED);
         } else {
             float w = Math.max(0.1F, entity.getBbWidth());
             float h = Math.max(0.1F, entity.getBbHeight());
-            int paneH = entityRenderBottom - rowsTop;
-            int scaleByH = (int) (paneH * 0.7F / h);
+            int paneH = entityRenderBottom - entityRenderTop;
+            // Tall mobs (horse, llama, camel) have model heads that extend well above
+            // their bounding-box height. The 0.5 multiplier on the height-fit pulls
+            // their scale down so the head clears the pane top; smaller pets still hit
+            // the absolute cap of 60 from the width side.
+            int scaleByH = (int) (paneH * 0.5F / h);
             int scaleByW = (int) (PREVIEW_W * 0.7F / w);
             int scale = Math.max(20, Math.min(60, Math.min(scaleByH, scaleByW)));
 
+            // Clamp the mouseY we feed the renderer to a tight band around vertical
+            // center. The vanilla helper derives pitch from (centerY - mouseY) / 40,
+            // so a cursor above the panel would tilt the head up and out of the box.
+            // Yaw still follows the actual mouseX for a bit of life.
+            int centerY = (entityRenderTop + entityRenderBottom) / 2;
+            int clampedMouseY = Math.max(centerY - 8, Math.min(centerY + 8, (int) mouseY));
             InventoryScreen.renderEntityInInventoryFollowsMouse(
                     g,
-                    previewX, rowsTop,
+                    previewX, entityRenderTop,
                     previewX + PREVIEW_W, entityRenderBottom,
                     scale,
                     0.0625F,
-                    mouseX, mouseY,
+                    mouseX, clampedMouseY,
                     entity);
         }
 
         int btnX = previewX + 4;
         int btnW = PREVIEW_W - 8;
-        int setActiveBtnY = rowsBottom - PANE_BTN_PAD - ACTION_BTN_H;
+        int setActiveBtnY = paneBottom - PANE_BTN_PAD - ACTION_BTN_H;
         int renameBtnY = setActiveBtnY - ACTION_BTN_GAP - ACTION_BTN_H;
 
         // Rename button (top of stack)
@@ -284,12 +316,16 @@ public final class RosterScreen extends Screen {
         drawButton(g, btnX, setActiveBtnY, btnW, ACTION_BTN_H, setActiveLabel, setActiveColor);
     }
 
+    private int previewBottom() {
+        return rowsBottom + PREVIEW_BTM_EXTEND;
+    }
+
     private int renameBtnY() {
-        return rowsBottom - PANE_BTN_PAD - ACTION_BTN_H - ACTION_BTN_GAP - ACTION_BTN_H;
+        return previewBottom() - PANE_BTN_PAD - ACTION_BTN_H - ACTION_BTN_GAP - ACTION_BTN_H;
     }
 
     private int setActiveBtnY() {
-        return rowsBottom - PANE_BTN_PAD - ACTION_BTN_H;
+        return previewBottom() - PANE_BTN_PAD - ACTION_BTN_H;
     }
 
     private BondView currentSelection() {
@@ -429,23 +465,29 @@ public final class RosterScreen extends Screen {
             name = renameBuffer + (caretVisible ? "_" : " ");
             nameColor = 0xFFE7B43B;  // gold tint while editing
         } else {
-            name = bond.displayName().orElse(bond.entityType().getPath());
+            name = bond.displayName().orElseGet(() -> entityTypeName(bond).getString());
         }
-        g.drawString(font, name, textX, y + 5, nameColor);
+        g.drawString(font, name, textX, y + ROW_NAME_Y_OFFSET, nameColor);
 
-        String sub = bond.entityType() + " · " + bond.lastSeenDim().getPath();
-        g.drawString(font, sub, textX, y + 16, C_TEXT_MUTED);
+        // Subtitle below the button line: "Horse · Overworld" when loaded,
+        // "Horse · Resting" when dismissed/stored (no live entity).
+        Component subtitle = entityTypeName(bond).copy().append(" · ").append(
+                bond.loaded()
+                        ? dimensionName(bond.lastSeenDim())
+                        : Component.translatable("petsummon.screen.state_resting"));
+        g.drawString(font, subtitle, textX, y + ROW_SUBTITLE_Y_OFFSET, C_TEXT_MUTED);
 
-        int btnH = rowH - 8;
-        int btnY = y + 4;
-        int summonW = 50;
-        int dismissW = 50;
-        int breakSmallW = 16;
+        int btnH = ROW_BTN_H;
+        // Buttons align with the top text line, not centered on the full row, so the
+        // subtitle reads cleanly below them.
+        int btnY = y + 2;
         int rightEdge = x + w - 4;
-
-        int breakSmallX = rightEdge - breakSmallW;
-        int dismissX = breakSmallX - dismissW - 4;
-        int summonX = dismissX - summonW - 4;
+        int breakSmallX = rightEdge - ROW_BREAK_W;
+        int dismissX = breakSmallX - ROW_BTN_GAP - ROW_DISMISS_W;
+        int summonX = dismissX - ROW_BTN_GAP - ROW_SUMMON_W;
+        int summonW = ROW_SUMMON_W;
+        int dismissW = ROW_DISMISS_W;
+        int breakSmallW = ROW_BREAK_W;
 
         boolean armed = bond.bondId().equals(breakArmedBondId)
                 && System.currentTimeMillis() < breakArmedExpiresAt;
@@ -488,7 +530,9 @@ public final class RosterScreen extends Screen {
                     Component.translatable("petsummon.screen.break_confirm"),
                     confirmHover ? C_BTN_BREAK_CONFIRM : C_BTN_BREAK_HOVER);
         } else {
-            boolean dismissDisabled = ClientRosterData.isRevivalPending(bond);
+            // Dismiss only makes sense for an entity that's actually in the world.
+            // Revival-pending pets are dead; not-loaded pets are already stored.
+            boolean dismissDisabled = ClientRosterData.isRevivalPending(bond) || !bond.loaded();
             boolean dismissHover = !dismissDisabled && inBox(mx, my, dismissX, btnY, dismissW, btnH);
             boolean breakHover = inBox(mx, my, breakSmallX, btnY, breakSmallW, btnH);
 
@@ -504,6 +548,45 @@ public final class RosterScreen extends Screen {
                     Component.literal("X"),
                     breakHover ? C_BTN_BREAK_HOVER : C_BTN_BREAK);
         }
+    }
+
+    /**
+     * Vanilla-style display name for the bond's entity type, e.g. "Horse" instead of
+     * "minecraft:horse". Falls back to the raw resource path when the type isn't in
+     * the registry on the client (modded type from a server we don't have the mod for).
+     */
+    private static Component entityTypeName(BondView bond) {
+        var type = BuiltInRegistries.ENTITY_TYPE.get(bond.entityType());
+        return type != null ? type.getDescription() : Component.literal(bond.entityType().getPath());
+    }
+
+    /**
+     * Pretty dimension name. Looks up {@code petsummon.dim.<ns>.<path>}; falls back to
+     * a capitalized, underscore-stripped version of the resource path so modded
+     * dimensions still read reasonably without us shipping every translation.
+     */
+    private static Component dimensionName(net.minecraft.resources.ResourceLocation dim) {
+        String key = "petsummon.dim." + dim.getNamespace() + "." + dim.getPath();
+        return Component.translatableWithFallback(key, prettifyPath(dim.getPath()));
+    }
+
+    private static String prettifyPath(String path) {
+        if (path.isEmpty()) return path;
+        StringBuilder sb = new StringBuilder(path.length());
+        boolean nextUpper = true;
+        for (int i = 0; i < path.length(); i++) {
+            char c = path.charAt(i);
+            if (c == '_') {
+                sb.append(' ');
+                nextUpper = true;
+            } else if (nextUpper) {
+                sb.append(Character.toUpperCase(c));
+                nextUpper = false;
+            } else {
+                sb.append(c);
+            }
+        }
+        return sb.toString();
     }
 
     /** 5x5 procedural diamond ("star" stand-in), centered at (cx, cy). */
@@ -561,15 +644,15 @@ public final class RosterScreen extends Screen {
 
             int x = leftPos + ROW_PAD;
             int rowH = ROW_HEIGHT - 2;
-            int btnH = ROW_HEIGHT - 10;
-            int btnY = rowY + 4;
-            int summonW = 50;
-            int dismissW = 50;
-            int breakSmallW = 16;
+            int btnH = ROW_BTN_H;
+            int btnY = rowY + 2;
+            int summonW = ROW_SUMMON_W;
+            int dismissW = ROW_DISMISS_W;
+            int breakSmallW = ROW_BREAK_W;
             int rightEdge = x + ROW_W - 4;
             int breakSmallX = rightEdge - breakSmallW;
-            int dismissX = breakSmallX - dismissW - 4;
-            int summonX = dismissX - summonW - 4;
+            int dismissX = breakSmallX - ROW_BTN_GAP - dismissW;
+            int summonX = dismissX - ROW_BTN_GAP - summonW;
 
             BondView bond = bonds.get(i);
             int mx = (int) mouseX;
@@ -616,8 +699,9 @@ public final class RosterScreen extends Screen {
                 }
             } else {
                 if (inBox(mx, my, dismissX, btnY, dismissW, btnH)) {
-                    // Dead pets have no entity to dismiss — block the hold.
-                    if (ClientRosterData.isRevivalPending(bond)) return true;
+                    // Block the hold for any state where there's nothing to dismiss:
+                    // dead (revival pending) or already stored (not loaded).
+                    if (ClientRosterData.isRevivalPending(bond) || !bond.loaded()) return true;
                     rowHold = new RowHold(bond.bondId(), RowHoldAction.DISMISS,
                             System.currentTimeMillis(), Config.holdToDismissMs());
                     return true;

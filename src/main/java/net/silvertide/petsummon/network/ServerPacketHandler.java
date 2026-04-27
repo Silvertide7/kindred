@@ -168,7 +168,8 @@ public final class ServerPacketHandler {
                     if (revivalCooldownMs > 0L && b.diedAt().isPresent()) {
                         revivalRemaining = Math.max(0L, revivalCooldownMs - (now - b.diedAt().get()));
                     }
-                    return BondView.from(b, roster.isActive(b.bondId()), remaining, revivalRemaining);
+                    boolean loaded = BondIndex.get().find(b.bondId()).isPresent();
+                    return BondView.from(b, roster.isActive(b.bondId()), loaded, remaining, revivalRemaining);
                 })
                 .toList();
         long globalRemaining = GlobalSummonCooldownTracker.get()

@@ -1,14 +1,14 @@
-# Pet Summon
+# Kindred
 
 NeoForge mod for Minecraft 1.21. A player can bond a small number of pets — wolves, cats, parrots, horses, camels, modded tameables — and recall any of them from anywhere via a custom screen opened by a keybind. There are **no items** — bonding, summoning, and management all happen through the screen and keybinds.
 
-> **Directory note.** The repo's top-level directory is still `mount_summon/` from the original scoping. The mod ID, package, class, and lang namespace have all been renamed to `petsummon`; only the working directory itself is unchanged (rename is safe but breaks any open IDE/shell sessions, so do it deliberately).
+> **Directory note.** The repo's top-level directory is still `mount_summon/` from the original scoping. The mod ID, package, class, and lang namespace have all been renamed to `kindred`; only the working directory itself is unchanged (rename is safe but breaks any open IDE/shell sessions, so do it deliberately).
 
 ## Project metadata
 
-- Mod ID: `petsummon`
-- Group / base package: `net.silvertide.petsummon`
-- Main class: [PetSummon.java](src/main/java/net/silvertide/petsummon/PetSummon.java)
+- Mod ID: `kindred`
+- Group / base package: `net.silvertide.kindred`
+- Main class: [Kindred.java](src/main/java/net/silvertide/kindred/Kindred.java)
 - Java: 21
 - Minecraft: 1.21
 - NeoForge: 21.0.167 (NeoForge's version scheme: `21.x.y` covers the 1.21.x line)
@@ -21,7 +21,7 @@ NeoForge mod for Minecraft 1.21. A player can bond a small number of pets — wo
 - `./gradlew runServer` — dev server (`--nogui`)
 - `./gradlew runGameTestServer` — gametest server
 - `./gradlew runData` — data generators (output at `src/generated/resources/`)
-- `./gradlew build` — produces `build/libs/petsummon-<version>.jar`
+- `./gradlew build` — produces `build/libs/kindred-<version>.jar`
 
 Mod metadata lives in a **template** at [src/main/templates/META-INF/neoforge.mods.toml](src/main/templates/META-INF/neoforge.mods.toml) — `${mod_id}` etc. are expanded by the `generateModMetadata` task on every IDE sync. Edit the template, not a generated copy.
 
@@ -44,7 +44,7 @@ What the mod is for, in priority order. Implementation choices should serve thes
 A bond can be claimed only when all three hold:
 
 1. The entity implements `OwnableEntity` and `getOwnerUUID()` matches the claiming player.
-2. The entity's type is **not** in `#petsummon:bond_blocklist` (datapack tag, empty by default).
+2. The entity's type is **not** in `#kindred:bond_blocklist` (datapack tag, empty by default).
 3. If config `requireSaddleable` is true, the entity must also implement `Saddleable`.
 
 Pets bondable by default in vanilla: wolves, cats, parrots, horses, donkeys, mules, llamas, trader llamas, camels, skeleton/zombie horses. Pigs and Striders are intentionally out (saddleable but not ownable in vanilla); revisiting them would require a custom ownership layer and is out of scope for v1.
@@ -68,6 +68,6 @@ Pets bondable by default in vanilla: wolves, cats, parrots, horses, donkeys, mul
 
 - All gameplay/state logic runs on the server; the client only renders and dispatches input.
 - Client-only code lives under `client/` and must not be classloaded on a dedicated server.
-- Player-facing strings go through lang keys ([en_us.json](src/main/resources/assets/petsummon/lang/en_us.json)) under the `petsummon.*` / `key.*` namespaces. No hardcoded English in code.
+- Player-facing strings go through lang keys ([en_us.json](src/main/resources/assets/kindred/lang/en_us.json)) under the `kindred.*` / `key.*` namespaces. No hardcoded English in code.
 - Configurable behavior goes through NeoForge's config system, not constants.
 - Bondable scope is defined by vanilla `OwnableEntity` + owner-match, with a datapack blocklist for opt-out and a config flag for mount-only mode. Avoid hardcoding entity-type checks.

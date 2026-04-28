@@ -14,7 +14,9 @@
       "Bash(./gradlew compileJava --rerun-tasks)",
       "Bash(./gradlew compileJava -Pjavac.compilerArgs=\"-Xlint:deprecation\" --rerun-tasks)",
       "Bash(javac --version)",
-      "Read(//Users/nate/.gradle/caches/**)"
+      "Read(//Users/nate/.gradle/caches/**)",
+      "Bash(./gradlew --stop)",
+      "Bash(xargs -0 sed -i '' -e 's/PetSummon/Kindred/g' -e 's/petsummon/kindred/g')"
     ]
   }
 }

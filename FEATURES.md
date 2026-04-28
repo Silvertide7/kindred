@@ -1,4 +1,4 @@
-# Pet Summon — Possible Features
+# Kindred — Possible Features
 
 Catalog of features to consider, grouped by scope. Treat tier 1 as the MVP definition; everything below is opt-in. Not a roadmap — a menu.
 
@@ -15,7 +15,7 @@ The minimum to ship.
   - Fallback when no active is set: oldest-bonded.
   - New packet `C2SSetActivePet(Optional<UUID> bondId)` — server validates the bondId is in the player's roster; empty Optional clears.
   - `BondView` gains `boolean isActive`. `S2CRosterSync` carries it for free.
-  - Rename keybind lang key `key.petsummon.summon_pet` → `key.petsummon.summon_active_pet` to match the new semantics.
+  - Rename keybind lang key `key.kindred.summon_pet` → `key.kindred.summon_active_pet` to match the new semantics.
 - **Dismiss / unsummon.** Per-row screen button (and likely a `dismiss_pet` keybind for "dismiss most-recently-summoned"). Snapshots the pet's current state before discarding so summon restores it exactly. Eject any player riding the pet first; stop-riding any vehicle; eject other passengers. Particle + sound on discard so it reads as "recalled" instead of "vanished." Note: this lets a low-HP pet escape death — same shape as cross-dim summon's existing rescue behavior, accepted as feature not exploit. HP is preserved as-is across dismiss/summon — no free heal.
 - **Claim flow**: from the screen, arm "claim next interaction"; right-click an eligible tamed pet within N seconds to bond.
 - **Break-bond flow**: per-row button with two-step confirm (alchemical-style 3s arm window).
@@ -92,10 +92,10 @@ Needed once people deploy this on multiplayer.
 
 - **Permissions** via NeoForge `PermissionAPI` nodes: `<modid>.claim`, `<modid>.summon`, `<modid>.break`, `<modid>.bypass_cooldown`, `<modid>.admin.list`, `<modid>.admin.transfer`.
 - **Admin commands**:
-  - `/petsummon list <player>` — show bonds.
-  - `/petsummon transfer <bondId> <newOwner>`.
-  - `/petsummon revoke <bondId>` — force-remove.
-  - `/petsummon find <bondId>` — print last-seen dim + pos.
+  - `/kindred list <player>` — show bonds.
+  - `/kindred transfer <bondId> <newOwner>`.
+  - `/kindred revoke <bondId>` — force-remove.
+  - `/kindred find <bondId>` — print last-seen dim + pos.
 - **Audit log** of bond/break/summon events to a per-world log file (opt-in).
 - **Per-dimension summon allow/denylist** in config.
 - **Rate limit per player** to prevent spam. Distinct from per-bond cooldown.

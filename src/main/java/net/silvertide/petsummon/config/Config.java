@@ -7,7 +7,7 @@ public final class Config {
 
     public static final ModConfigSpec.IntValue MAX_BONDS = BUILDER
             .comment("Maximum number of bonds per player.")
-            .defineInRange("maxBonds", 5, 1, 64);
+            .defineInRange("maxBonds", 10, 1, 64);
 
     public static final ModConfigSpec.BooleanValue REQUIRE_SADDLEABLE = BUILDER
             .comment("If true, only entities implementing Saddleable can be bonded (mount-only mode).")
@@ -58,6 +58,13 @@ public final class Config {
     public static final ModConfigSpec.BooleanValue CANCEL_HOLD_ON_DAMAGE = BUILDER
             .comment("If true, taking damage cancels any in-progress summon/dismiss hold (mirrors vanilla bow-draw / eating interrupt).")
             .define("cancelHoldOnDamage", true);
+
+    public static final ModConfigSpec.BooleanValue DROP_LOOT_ON_DEATH = BUILDER
+            .comment("If true (vanilla), bonded pets drop their inventory and loot on death. " +
+                     "Set to false alongside a non-zero revivalCooldownSeconds so revived pets " +
+                     "keep their saddle, chest contents, armor, etc. across deaths instead of " +
+                     "the player having to recover items off the ground.")
+            .define("dropLootOnDeath", true);
 
     public static final ModConfigSpec SPEC = BUILDER.build();
 

@@ -7,6 +7,7 @@ import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 import net.silvertide.petsummon.PetSummon;
 import net.silvertide.petsummon.client.network.ClientPacketHandler;
 import net.silvertide.petsummon.network.packet.C2SBreakBond;
+import net.silvertide.petsummon.network.packet.C2SCheckBindCandidate;
 import net.silvertide.petsummon.network.packet.C2SClaimEntity;
 import net.silvertide.petsummon.network.packet.C2SDismissBond;
 import net.silvertide.petsummon.network.packet.C2SOpenRoster;
@@ -14,6 +15,7 @@ import net.silvertide.petsummon.network.packet.C2SRenameBond;
 import net.silvertide.petsummon.network.packet.C2SSetActivePet;
 import net.silvertide.petsummon.network.packet.C2SSummonBond;
 import net.silvertide.petsummon.network.packet.C2SSummonByKeybind;
+import net.silvertide.petsummon.network.packet.S2CBindCandidateResult;
 import net.silvertide.petsummon.network.packet.S2CCancelHold;
 import net.silvertide.petsummon.network.packet.S2CRosterSync;
 
@@ -32,9 +34,11 @@ public final class Networking {
         registrar.playToServer(C2SSetActivePet.TYPE, C2SSetActivePet.STREAM_CODEC, ServerPacketHandler::onSetActivePet);
         registrar.playToServer(C2SDismissBond.TYPE, C2SDismissBond.STREAM_CODEC, ServerPacketHandler::onDismissBond);
         registrar.playToServer(C2SRenameBond.TYPE, C2SRenameBond.STREAM_CODEC, ServerPacketHandler::onRenameBond);
+        registrar.playToServer(C2SCheckBindCandidate.TYPE, C2SCheckBindCandidate.STREAM_CODEC, ServerPacketHandler::onCheckBindCandidate);
 
         registrar.playToClient(S2CRosterSync.TYPE, S2CRosterSync.STREAM_CODEC, ClientPacketHandler::onRosterSync);
         registrar.playToClient(S2CCancelHold.TYPE, S2CCancelHold.STREAM_CODEC, ClientPacketHandler::onCancelHold);
+        registrar.playToClient(S2CBindCandidateResult.TYPE, S2CBindCandidateResult.STREAM_CODEC, ClientPacketHandler::onBindCandidateResult);
     }
 
     private Networking() {}

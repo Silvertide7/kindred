@@ -34,6 +34,9 @@ import net.silvertide.petsummon.config.Config;
 import net.silvertide.petsummon.registry.ModAttachments;
 import net.silvertide.petsummon.registry.ModTags;
 
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -81,19 +84,27 @@ public final class BondManager {
         SPAWN_FAILED
     }
 
-    public static ClaimResult tryClaim(ServerPlayer player, Entity target) {
+    /**
+     * Run the same eligibility checks {@link #tryClaim} would, without mutating
+     * anything. Used by the bind-candidate validation packet so the screen can
+     * hide the Bind button for entities the server would refuse anyway.
+     */
+    public static ClaimResult checkClaimEligibility(ServerPlayer player, Entity target) {
         if (!(target instanceof OwnableEntity owned)) return ClaimResult.NOT_OWNABLE;
         if (!player.getUUID().equals(owned.getOwnerUUID())) return ClaimResult.NOT_OWNED_BY_PLAYER;
-
         if (BuiltInRegistries.ENTITY_TYPE.wrapAsHolder(target.getType()).is(ModTags.BOND_BLOCKLIST)) return ClaimResult.BLOCKLISTED;
-
         if (Config.REQUIRE_SADDLEABLE.get() && !(target instanceof Saddleable)) return ClaimResult.REQUIRES_SADDLEABLE;
-
         BondRoster roster = player.getData(ModAttachments.BOND_ROSTER.get());
         if (roster.size() >= Config.MAX_BONDS.get()) return ClaimResult.AT_CAPACITY;
-
         if (target.hasData(ModAttachments.BONDED.get())) return ClaimResult.ALREADY_BONDED;
+        return ClaimResult.CLAIMED;
+    }
 
+    public static ClaimResult tryClaim(ServerPlayer player, Entity target) {
+        ClaimResult eligibility = checkClaimEligibility(player, target);
+        if (eligibility != ClaimResult.CLAIMED) return eligibility;
+
+        BondRoster roster = player.getData(ModAttachments.BOND_ROSTER.get());
         ServerLevel level = (ServerLevel) target.level();
         PetSummonSavedData saved = PetSummonSavedData.get(level);
 
@@ -417,40 +428,70 @@ public final class BondManager {
     }
 
     /**
-     * Search a 5x5 (x/z) footprint around the player for a column whose ground supports
-     * the entity's bounding box. Searches center-out (radius 0, then 1, then 2) and within
-     * each column tries the player's level first, then up to 3 blocks below for an
-     * overhang/step-down. Returns the spawn position (feet center, on top of the floor block)
-     * or empty if nothing fits.
+     * Search a 5x5 (x/z) footprint around the player for a spot where the entity can
+     * stand without overlapping any block. Candidates are sorted by a combined
+     * distance + facing-direction score so the pet prefers landing on flat ground in
+     * front of the player. The player's own tile (dx=0, dz=0) is the last resort —
+     * we'd rather have the pet beside or in front of the player than on top of them.
+     *
+     * Each column tries 1 block above the player's feet (handles a single-block step
+     * up in front), the player's level, and up to 3 below (handles step-downs and
+     * overhangs). "Floor must be sturdy" + "pocket must be free of collisions" are
+     * the only structural checks — dropoffs adjacent to the spot are fine.
      */
     private static Optional<Vec3> findSpawnLocation(ServerLevel level, ServerPlayer player, EntityDimensions dims) {
         BlockPos pp = player.blockPosition();
-        for (int r = 0; r <= 2; r++) {
-            for (int dx = -r; dx <= r; dx++) {
-                for (int dz = -r; dz <= r; dz++) {
-                    if (Math.max(Math.abs(dx), Math.abs(dz)) != r) continue; // ring only
-                    Optional<Vec3> spot = tryColumn(level, pp.offset(dx, 0, dz), dims);
-                    if (spot.isPresent()) return spot;
-                }
+
+        // Horizontal forward unit vector from the player's yaw. -sin/cos because
+        // Minecraft yaw 0 looks toward +Z and increases clockwise.
+        float yawRad = player.getYRot() * (float) (Math.PI / 180.0);
+        double fx = -Math.sin(yawRad);
+        double fz = Math.cos(yawRad);
+
+        record Candidate(int dx, int dz, double score) {}
+        List<Candidate> ranked = new ArrayList<>(24);
+        for (int dx = -2; dx <= 2; dx++) {
+            for (int dz = -2; dz <= 2; dz++) {
+                if (dx == 0 && dz == 0) continue; // on-player handled as last resort
+                double forwardness = dx * fx + dz * fz;       // + in front, - behind
+                double lateral = Math.abs(dx * fz - dz * fx); // perpendicular distance
+                double dist = Math.sqrt(dx * dx + dz * dz);
+                // Higher = better. Forwardness dominates direction (front >> behind),
+                // lateral lightly penalizes off-axis spots so direct-front beats the
+                // diagonal corners, and the small +dist nudge breaks ties toward
+                // landing a couple blocks out instead of right next to the player.
+                ranked.add(new Candidate(dx, dz, forwardness - 0.2 * lateral + 0.05 * dist));
             }
         }
-        return Optional.empty();
+        ranked.sort(Comparator.comparingDouble(Candidate::score).reversed());
+
+        for (Candidate c : ranked) {
+            Optional<Vec3> spot = tryColumn(level, pp.offset(c.dx, 0, c.dz), dims);
+            if (spot.isPresent()) return spot;
+        }
+        // Last resort: the player's own column.
+        return tryColumn(level, pp, dims);
     }
 
     private static Optional<Vec3> tryColumn(ServerLevel level, BlockPos start, EntityDimensions dims) {
         int minY = level.getMinBuildHeight();
-        for (int dy = 0; dy <= 3; dy++) {
-            BlockPos top = start.below(dy);
+        int maxY = level.getMaxBuildHeight();
+        // dy = -1 is one block above the player (handles a step-up), 0 is player level,
+        // 1..3 are step-downs/overhangs. We iterate top-down so the highest valid floor
+        // wins (avoids burrowing into a hole when the pet could stand on the lip above).
+        for (int dy = -1; dy <= 3; dy++) {
+            int feetY = start.getY() - dy;
+            if (feetY <= minY || feetY >= maxY) continue;
+            BlockPos top = new BlockPos(start.getX(), feetY, start.getZ());
             BlockPos floor = top.below();
-            if (floor.getY() < minY) return Optional.empty();
             BlockState floorState = level.getBlockState(floor);
             if (!floorState.isFaceSturdy(level, floor, Direction.UP)) continue;
-            // Floor is solid — check pocket above fits the entity.
             AABB box = dims.makeBoundingBox(top.getX() + 0.5D, top.getY(), top.getZ() + 0.5D);
             if (level.noCollision(box)) {
                 return Optional.of(new Vec3(top.getX() + 0.5D, top.getY(), top.getZ() + 0.5D));
             }
-            // Solid floor but pocket blocked — give up this column.
+            // Sturdy floor here but the pet's bounding box hits something above it.
+            // Don't keep looking deeper in this column — anything below is buried.
             return Optional.empty();
         }
         return Optional.empty();

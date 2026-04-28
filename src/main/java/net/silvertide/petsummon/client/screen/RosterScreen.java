@@ -21,6 +21,7 @@ import net.silvertide.petsummon.client.data.PreviewEntityCache;
 import net.silvertide.petsummon.config.Config;
 import net.silvertide.petsummon.network.BondView;
 import net.silvertide.petsummon.network.packet.C2SBreakBond;
+import net.silvertide.petsummon.network.packet.C2SCheckBindCandidate;
 import net.silvertide.petsummon.network.packet.C2SClaimEntity;
 import net.silvertide.petsummon.network.packet.C2SDismissBond;
 import net.silvertide.petsummon.network.packet.C2SOpenRoster;
@@ -76,13 +77,16 @@ public final class RosterScreen extends Screen {
     private static final int C_TEXT_MUTED = 0xFF8FA0B0;
     private static final int C_BTN_SUMMON = 0xFF3A7F5A;
     private static final int C_BTN_SUMMON_HOVER = 0xFF4FA374;
-    private static final int C_BTN_SUMMON_DISABLED = 0xFF3F4F45;
+    private static final int C_BTN_SUMMON_DISABLED = 0xFF22302A;
     private static final int C_BTN_BREAK = 0xFF7A3A3A;
     private static final int C_BTN_BREAK_HOVER = 0xFF994A4A;
     private static final int C_BTN_BREAK_CONFIRM = 0xFFD45A5A;
     private static final int C_BTN_DISMISS = 0xFF6A5A3A;
     private static final int C_BTN_DISMISS_HOVER = 0xFF8A7A52;
-    private static final int C_BTN_DISMISS_DISABLED = 0xFF4A4538;
+    private static final int C_BTN_DISMISS_DISABLED = 0xFF2A2620;
+    /** Dimmed label color for disabled buttons — pairs with the darker disabled
+     *  background to make "this can't be clicked" obvious at a glance. */
+    private static final int C_BTN_TEXT_DISABLED = 0xFF6F6A60;
     private static final int C_BTN_CLAIM = 0xFF3D5C8A;
     private static final int C_BTN_CLAIM_HOVER = 0xFF5278B0;
     private static final int C_STAR_ACTIVE = 0xFFE7B43B;
@@ -150,6 +154,17 @@ public final class RosterScreen extends Screen {
      *  Server enforces distance on the actual bind packet. */
     private Entity initialCandidate;
 
+    /** Tri-state for the bind candidate's server-side validation:
+     *  null = no pending check; FALSE = waiting on response or rejected; TRUE = confirmed.
+     *  Owner UUID isn't synced to the client for {@code AbstractHorse}, so we round-trip
+     *  the eligibility check through the server before showing the Bind button. */
+    private Boolean bindCandidateConfirmed = null;
+
+    /** Translation key for "why can't I bind this", set when the server denies the
+     *  candidate. Empty when the candidate is bindable, pending, or there's no
+     *  candidate at all. Renders in the footer in place of the generic bind hint. */
+    private java.util.Optional<String> bindDenyKey = java.util.Optional.empty();
+
     public RosterScreen() {
         super(Component.translatable("petsummon.screen.title"));
     }
@@ -168,8 +183,10 @@ public final class RosterScreen extends Screen {
         previewX = separatorX + 4;
 
         // Claim/bind button spans full panel width minus padding (footer is below preview).
-        claimBtnW = PANEL_WIDTH - 2 * ROW_PAD - 8;
-        claimBtnX = leftPos + ROW_PAD + 4;
+        // Constrain the Bind button to the rows column so it doesn't stretch under
+        // the preview pane (which has its own buttons in that vertical band).
+        claimBtnW = ROW_W;
+        claimBtnX = leftPos + ROW_PAD;
         claimBtnY = topPos + panelHeight - FOOTER_H + (FOOTER_H - CLAIM_BTN_H) / 2;
 
         // Default-select the active pet so the preview shows something on open.
@@ -177,15 +194,31 @@ public final class RosterScreen extends Screen {
         active.ifPresent(bv -> selectedBondId = bv.bondId());
 
         // Lock in the bind candidate at open time. No re-raycast while the screen is open.
+        // The button stays hidden until the server confirms eligibility — owner UUID
+        // isn't synced to the client for AbstractHorse so we can't validate locally.
         LocalPlayer p = Minecraft.getInstance().player;
         if (p != null) {
             Entity hit = raycastEntity(p);
             if (hit != null && passesClientGates(hit)) {
                 initialCandidate = hit;
+                bindCandidateConfirmed = Boolean.FALSE;  // pending until server replies
+                bindDenyKey = java.util.Optional.empty();
+                PacketDistributor.sendToServer(new C2SCheckBindCandidate(hit.getUUID()));
             }
         }
 
         PacketDistributor.sendToServer(new C2SOpenRoster());
+    }
+
+    /** Called by the network handler when the server returns its eligibility verdict. */
+    public void onBindCandidateResult(java.util.UUID entityUUID, boolean canBind, java.util.Optional<String> denyKey) {
+        if (initialCandidate == null) return;
+        if (!entityUUID.equals(initialCandidate.getUUID())) return;  // stale response
+        bindCandidateConfirmed = canBind ? Boolean.TRUE : Boolean.FALSE;
+        bindDenyKey = canBind ? java.util.Optional.empty() : denyKey;
+        // Keep initialCandidate around even on deny, so the footer can render the
+        // type-specific deny message (currently it just uses the lang key as-is, but
+        // type-aware messages are an easy follow-up).
     }
 
     @Override
@@ -207,6 +240,12 @@ public final class RosterScreen extends Screen {
         drawBorder(g, leftPos, topPos, PANEL_WIDTH, panelHeight, C_BORDER);
 
         g.drawCenteredString(font, getTitle(), leftPos + PANEL_WIDTH / 2, topPos + 8, C_TEXT);
+
+        // Bond count (e.g. "3/10") — left-aligned in title bar, mirrors the cooldown
+        // indicator on the right.
+        int bondCount = ClientRosterData.bonds().size();
+        int maxBonds = Config.MAX_BONDS.get();
+        g.drawString(font, bondCount + "/" + maxBonds, leftPos + 6, topPos + 8, C_TEXT_MUTED);
 
         // Global cooldown indicator (only when active). Right-aligned in title bar.
         if (ClientRosterData.isGlobalSummonOnCooldown()) {
@@ -344,19 +383,29 @@ public final class RosterScreen extends Screen {
             Component label = Component.translatable("petsummon.screen.bind", typeName);
             drawButton(g, claimBtnX, claimBtnY, claimBtnW, CLAIM_BTN_H, label,
                     hover ? C_BTN_CLAIM_HOVER : C_BTN_CLAIM);
-        } else {
-            g.drawCenteredString(font, Component.translatable("petsummon.screen.bind_hint"),
-                    leftPos + PANEL_WIDTH / 2,
-                    claimBtnY + (CLAIM_BTN_H - font.lineHeight) / 2 + 1,
-                    C_TEXT_MUTED);
+            return;
         }
+        // No bindable candidate: show the deny reason if the server gave us one,
+        // otherwise the generic "look at a tamed pet" hint. Centered in the rows
+        // column so the preview pane's buttons stay clear.
+        Component message = bindDenyKey.<Component>map(Component::translatable)
+                .orElse(Component.translatable("petsummon.screen.bind_hint"));
+        g.drawCenteredString(font, message,
+                claimBtnX + claimBtnW / 2,
+                claimBtnY + (CLAIM_BTN_H - font.lineHeight) / 2 + 1,
+                C_TEXT_MUTED);
     }
 
     private Entity findClaimCandidate() {
         if (initialCandidate != null && initialCandidate.isRemoved()) {
             initialCandidate = null;
+            bindCandidateConfirmed = null;
         }
-        return initialCandidate;
+        // Only render the Bind button once the server has confirmed eligibility —
+        // hides the button entirely for wild horses (where the local instanceof
+        // OwnableEntity check would otherwise pass).
+        if (Boolean.TRUE.equals(bindCandidateConfirmed)) return initialCandidate;
+        return null;
     }
 
     private Entity raycastEntity(LocalPlayer p) {
@@ -517,10 +566,12 @@ public final class RosterScreen extends Screen {
         } else {
             summonLabel = Component.translatable("petsummon.screen.summon");
         }
+        int summonTextColor = summonDisabled ? C_BTN_TEXT_DISABLED : C_TEXT;
         drawButton(g, summonX, btnY, summonW, btnH,
                 summonLabel,
                 summonColor,
-                summonHoldProgress);
+                summonHoldProgress,
+                summonTextColor);
 
         if (armed) {
             int confirmX = dismissX;
@@ -539,10 +590,12 @@ public final class RosterScreen extends Screen {
             int dismissColor = dismissDisabled
                     ? C_BTN_DISMISS_DISABLED
                     : (dismissHover ? C_BTN_DISMISS_HOVER : C_BTN_DISMISS);
+            int dismissTextColor = dismissDisabled ? C_BTN_TEXT_DISABLED : C_TEXT;
             drawButton(g, dismissX, btnY, dismissW, btnH,
                     Component.translatable("petsummon.screen.dismiss"),
                     dismissColor,
-                    dismissHoldProgress);
+                    dismissHoldProgress,
+                    dismissTextColor);
 
             drawButton(g, breakSmallX, btnY, breakSmallW, btnH,
                     Component.literal("X"),
@@ -812,16 +865,20 @@ public final class RosterScreen extends Screen {
     }
 
     private void drawButton(GuiGraphics g, int x, int y, int w, int h, Component label, int color) {
-        drawButton(g, x, y, w, h, label, color, 0F);
+        drawButton(g, x, y, w, h, label, color, 0F, C_TEXT);
     }
 
     private void drawButton(GuiGraphics g, int x, int y, int w, int h, Component label, int color, float holdProgress) {
+        drawButton(g, x, y, w, h, label, color, holdProgress, C_TEXT);
+    }
+
+    private void drawButton(GuiGraphics g, int x, int y, int w, int h, Component label, int color, float holdProgress, int textColor) {
         g.fill(x, y, x + w, y + h, color);
         if (holdProgress > 0F) {
             int fillW = Math.max(1, (int) (w * holdProgress));
             g.fill(x, y, x + fillW, y + h, 0x66FFFFFF);
         }
-        g.drawCenteredString(font, label, x + w / 2, y + (h - font.lineHeight) / 2 + 1, C_TEXT);
+        g.drawCenteredString(font, label, x + w / 2, y + (h - font.lineHeight) / 2 + 1, textColor);
     }
 
     private static boolean inBox(int x, int y, int bx, int by, int bw, int bh) {

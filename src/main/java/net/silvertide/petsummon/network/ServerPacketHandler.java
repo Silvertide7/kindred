@@ -12,6 +12,7 @@ import net.silvertide.petsummon.attachment.BondRoster;
 import net.silvertide.petsummon.config.Config;
 import net.silvertide.petsummon.server.BondIndex;
 import net.silvertide.petsummon.network.packet.C2SBreakBond;
+import net.silvertide.petsummon.network.packet.C2SCheckBindCandidate;
 import net.silvertide.petsummon.network.packet.C2SClaimEntity;
 import net.silvertide.petsummon.network.packet.C2SDismissBond;
 import net.silvertide.petsummon.network.packet.C2SOpenRoster;
@@ -19,6 +20,7 @@ import net.silvertide.petsummon.network.packet.C2SRenameBond;
 import net.silvertide.petsummon.network.packet.C2SSetActivePet;
 import net.silvertide.petsummon.network.packet.C2SSummonBond;
 import net.silvertide.petsummon.network.packet.C2SSummonByKeybind;
+import net.silvertide.petsummon.network.packet.S2CBindCandidateResult;
 import net.silvertide.petsummon.network.packet.S2CRosterSync;
 import net.silvertide.petsummon.registry.ModAttachments;
 import net.silvertide.petsummon.server.BondManager;
@@ -87,6 +89,38 @@ public final class ServerPacketHandler {
             player.sendSystemMessage(Component.literal("Dismiss: " + result.name()));
             if (result == BondManager.DismissResult.DISMISSED) sendRosterSync(player);
         });
+    }
+
+    public static void onCheckBindCandidate(C2SCheckBindCandidate payload, IPayloadContext context) {
+        context.enqueueWork(() -> {
+            if (!(context.player() instanceof ServerPlayer player)) return;
+            ServerLevel level = (ServerLevel) player.level();
+            Entity target = level.getEntity(payload.entityUUID());
+            // Entity gone or out of reach — silent rejection (no message). The screen
+            // falls back to the generic "look at a tamed pet" hint in that case.
+            if (target == null || target.distanceToSqr(player) > MAX_CLAIM_DISTANCE_SQ) {
+                PacketDistributor.sendToPlayer(player, new S2CBindCandidateResult(
+                        payload.entityUUID(), false, Optional.empty()));
+                return;
+            }
+            BondManager.ClaimResult result = BondManager.checkClaimEligibility(player, target);
+            boolean canBind = result == BondManager.ClaimResult.CLAIMED;
+            Optional<String> denyKey = canBind ? Optional.empty() : Optional.of(denyKeyFor(result));
+            PacketDistributor.sendToPlayer(player, new S2CBindCandidateResult(
+                    payload.entityUUID(), canBind, denyKey));
+        });
+    }
+
+    private static String denyKeyFor(BondManager.ClaimResult result) {
+        return switch (result) {
+            case NOT_OWNABLE -> "petsummon.bind.deny.not_ownable";
+            case NOT_OWNED_BY_PLAYER -> "petsummon.bind.deny.not_owned";
+            case BLOCKLISTED -> "petsummon.bind.deny.blocklisted";
+            case REQUIRES_SADDLEABLE -> "petsummon.bind.deny.requires_saddleable";
+            case AT_CAPACITY -> "petsummon.bind.deny.at_capacity";
+            case ALREADY_BONDED -> "petsummon.bind.deny.already_bonded";
+            default -> "petsummon.bind.deny.generic";
+        };
     }
 
     public static void onClaimEntity(C2SClaimEntity payload, IPayloadContext context) {

@@ -13,6 +13,8 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
 import net.neoforged.neoforge.event.entity.EntityLeaveLevelEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
+import net.neoforged.neoforge.event.entity.living.LivingDropsEvent;
+import net.neoforged.neoforge.event.entity.living.LivingExperienceDropEvent;
 import net.silvertide.petsummon.PetSummon;
 import net.silvertide.petsummon.attachment.Bond;
 import net.silvertide.petsummon.attachment.BondRoster;
@@ -104,6 +106,31 @@ public final class EntityEvents {
                 });
             }
         }
+    }
+
+    /**
+     * Suppress vanilla loot/inventory drops for bonded pets when the config opts out.
+     * Pairs with the revival cooldown — without this, a horse with a saddle and chest
+     * full of gear would scatter all of it on death and the revived pet would come
+     * back empty. Cancels the whole drops list (mob loot, equipment, chest contents,
+     * wolf armor) since the snapshot taken at corpse-removal still contains them.
+     */
+    @SubscribeEvent
+    public static void onLivingDrops(LivingDropsEvent event) {
+        if (Config.DROP_LOOT_ON_DEATH.get()) return;
+        if (!event.getEntity().hasData(ModAttachments.BONDED.get())) return;
+        event.setCanceled(true);
+    }
+
+    /**
+     * Same opt-out also suppresses XP orbs from bonded-pet deaths. Reviving a pet
+     * shouldn't be a renewable XP source either.
+     */
+    @SubscribeEvent
+    public static void onLivingExperienceDrop(LivingExperienceDropEvent event) {
+        if (Config.DROP_LOOT_ON_DEATH.get()) return;
+        if (!event.getEntity().hasData(ModAttachments.BONDED.get())) return;
+        event.setCanceled(true);
     }
 
     private static void snapshotEntity(ServerLevel level, Entity entity, Bonded bonded) {

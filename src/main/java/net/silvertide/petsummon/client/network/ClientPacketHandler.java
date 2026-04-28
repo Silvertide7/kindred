@@ -6,12 +6,22 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 import net.silvertide.petsummon.client.data.ClientRosterData;
 import net.silvertide.petsummon.client.data.HoldActionState;
 import net.silvertide.petsummon.client.screen.RosterScreen;
+import net.silvertide.petsummon.network.packet.S2CBindCandidateResult;
 import net.silvertide.petsummon.network.packet.S2CCancelHold;
 import net.silvertide.petsummon.network.packet.S2CRosterSync;
 
 public final class ClientPacketHandler {
     public static void onRosterSync(S2CRosterSync payload, IPayloadContext context) {
         context.enqueueWork(() -> ClientRosterData.update(payload.bonds(), payload.globalCooldownRemainingMs()));
+    }
+
+    public static void onBindCandidateResult(S2CBindCandidateResult payload, IPayloadContext context) {
+        context.enqueueWork(() -> {
+            Screen current = Minecraft.getInstance().screen;
+            if (current instanceof RosterScreen rs) {
+                rs.onBindCandidateResult(payload.entityUUID(), payload.canBind(), payload.denyMessageKey());
+            }
+        });
     }
 
     public static void onCancelHold(S2CCancelHold payload, IPayloadContext context) {

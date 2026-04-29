@@ -60,7 +60,7 @@ public final class ServerPacketHandler {
                 return;
             }
             BondManager.SummonResult result = BondManager.summon(player, activeId.get());
-            player.sendSystemMessage(Component.literal("Summon: " + result.name()));
+            player.sendSystemMessage(messageForSummonResult(result));
             if (isSummonSuccess(result)) sendRosterSync(player);
         });
     }
@@ -69,9 +69,22 @@ public final class ServerPacketHandler {
         context.enqueueWork(() -> {
             if (!(context.player() instanceof ServerPlayer player)) return;
             BondManager.SummonResult result = BondManager.summon(player, payload.bondId());
-            player.sendSystemMessage(Component.literal("Summon: " + result.name()));
+            player.sendSystemMessage(messageForSummonResult(result));
             if (isSummonSuccess(result)) sendRosterSync(player);
         });
+    }
+
+    /**
+     * Cases the player would actually read get translatable messages; the rest fall
+     * back to {@code "Summon: ENUM_NAME"} as a developer-readable diagnostic until
+     * we've polished those paths.
+     */
+    private static Component messageForSummonResult(BondManager.SummonResult result) {
+        return switch (result) {
+            case BANNED_DIMENSION -> Component.translatable("kindred.summon.banned_dimension");
+            case BANNED_BIOME -> Component.translatable("kindred.summon.banned_biome");
+            default -> Component.literal("Summon: " + result.name());
+        };
     }
 
     public static void onBreakBond(C2SBreakBond payload, IPayloadContext context) {

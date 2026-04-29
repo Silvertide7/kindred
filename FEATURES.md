@@ -80,7 +80,7 @@ Worth doing if you commit to the mod long-term.
 - **Pet perks / traits** — random or rare traits (Surefooted: no fall damage, Frostpaws: doesn't slip on ice, Beast of Burden: +chest slots, Loyal: faster summon). Datapack-defined.
 - **Trust / loyalty stat** — feeding, brushing, time near owner increases loyalty; high-loyalty pets come faster, low-loyalty pets ignore the first call.
 - **Multi-player bonds** — co-bond a pet to a party so both players can summon. Permission-gated.
-- **Banned-zone tags** `#<modid>:no_summon_dimensions` and `#<modid>:no_summon_biomes` — datapack control over where summoning is allowed (e.g. block PvP arenas, the End fight).
+- ✅ **Banned-zone tags** `#kindred:no_summon_dimensions` (`TagKey<DimensionType>`) and `#kindred:no_summon_biomes` (`TagKey<Biome>`) — datapack control over summoning. Checked against the destination (player's current location), so cross-dim summons are gated by the player's dim/biome, not the pet's. New `SummonResult.BANNED_DIMENSION` / `BANNED_BIOME`. Both tags ship empty.
 - **Camel double-seat + llama caravans** — preserve attached llamas in a caravan when summoning the leader.
 - **Pet loadouts** — save a pet's equipment layout as a named loadout, swap presets from the screen (mount-only mostly, but wolf armor counts).
 

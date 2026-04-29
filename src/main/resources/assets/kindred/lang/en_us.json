@@ -36,6 +36,8 @@
   "kindred.summon.no_bonds": "No bonds to summon",
   "kindred.summon.no_active": "No active pet set",
   "kindred.summon.on_cooldown": "Pet's summon is on cooldown",
-  "kindred.summon.global_cooldown": "Summon cooldown active",
-  "kindred.summon.reviving": "Pet is respawning"
+  "kindred.summon.global_cooldown": "Summon on cooldown",
+  "kindred.summon.reviving": "Pet is respawning",
+  "kindred.summon.banned_dimension": "You can't summon pets in this dimension",
+  "kindred.summon.banned_biome": "You can't summon pets in this biome"
 }

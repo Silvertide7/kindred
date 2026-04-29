@@ -84,6 +84,8 @@ public final class BondManager {
         NO_SPACE,
         PLAYER_AIRBORNE,
         CROSS_DIM_BLOCKED,
+        BANNED_DIMENSION,
+        BANNED_BIOME,
         SPAWN_FAILED
     }
 
@@ -269,6 +271,17 @@ public final class BondManager {
         ServerLevel playerLevel = (ServerLevel) player.level();
         KindredSavedData saved = KindredSavedData.get(playerLevel);
         ResourceKey<Level> playerDim = playerLevel.dimension();
+
+        // Datapack-controlled summon zones. Checks the *destination* (where the pet
+        // would materialize), so cross-dim summons are gated by the player's current
+        // location, not the pet's. Tag membership is auto-synced to clients in vanilla,
+        // but we don't bother pre-validating client-side — the chat error is fine.
+        if (playerLevel.dimensionTypeRegistration().is(ModTags.NO_SUMMON_DIMENSIONS)) {
+            return SummonResult.BANNED_DIMENSION;
+        }
+        if (playerLevel.getBiome(player.blockPosition()).is(ModTags.NO_SUMMON_BIOMES)) {
+            return SummonResult.BANNED_BIOME;
+        }
 
         Optional<Entity> existing = BondIndex.get().find(bondId);
         if (existing.isPresent()) {

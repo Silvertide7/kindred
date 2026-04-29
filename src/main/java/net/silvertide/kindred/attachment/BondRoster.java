@@ -1,6 +1,5 @@
 package net.silvertide.kindred.attachment;
 
-import com.mojang.datafixers.util.Either;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.core.UUIDUtil;
@@ -16,20 +15,10 @@ import java.util.UUID;
 public record BondRoster(Map<UUID, Bond> bonds, Optional<UUID> activePetId) {
     public static final BondRoster EMPTY = new BondRoster(Map.of(), Optional.empty());
 
-    private static final Codec<BondRoster> NEW_CODEC = RecordCodecBuilder.create(instance -> instance.group(
+    public static final Codec<BondRoster> CODEC = RecordCodecBuilder.create(instance -> instance.group(
             Codec.unboundedMap(UUIDUtil.STRING_CODEC, Bond.CODEC).fieldOf("bonds").forGetter(BondRoster::bonds),
             UUIDUtil.STRING_CODEC.optionalFieldOf("active").forGetter(BondRoster::activePetId)
     ).apply(instance, BondRoster::new));
-
-    // Pre-active-pet shape: a flat map of bondId -> Bond. Kept so existing player files
-    // upgrade cleanly. Loads as new with empty activePetId; next save uses new shape.
-    private static final Codec<BondRoster> LEGACY_CODEC = Codec.unboundedMap(UUIDUtil.STRING_CODEC, Bond.CODEC)
-            .xmap(map -> new BondRoster(map, Optional.empty()), BondRoster::bonds);
-
-    public static final Codec<BondRoster> CODEC = Codec.either(NEW_CODEC, LEGACY_CODEC).xmap(
-            either -> either.map(l -> l, r -> r),
-            Either::left
-    );
 
     public Optional<Bond> get(UUID bondId) {
         return Optional.ofNullable(bonds.get(bondId));

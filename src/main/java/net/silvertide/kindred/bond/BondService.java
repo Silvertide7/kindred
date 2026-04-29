@@ -269,11 +269,22 @@ public final class BondService {
      */
     public static DismissResult dismiss(ServerPlayer player, UUID bondId) {
         BondRoster roster = player.getData(ModAttachments.BOND_ROSTER.get());
-        if (roster.get(bondId).isEmpty()) return DismissResult.NO_SUCH_BOND;
+        Optional<Bond> bondOpt = roster.get(bondId);
+        if (bondOpt.isEmpty()) return DismissResult.NO_SUCH_BOND;
 
         Optional<Entity> existing = BondIndex.get().find(bondId);
         if (existing.isEmpty()) return DismissResult.NOT_LOADED;
         Entity entity = existing.get();
+
+        // Set dismissed=true BEFORE the destructive discard(). The leave-event handler
+        // fires synchronously from discard() and rewrites the bond's snapshot/dim/pos,
+        // but goes through Bond.withSnapshot() which preserves every other field —
+        // including the dismissed flag we just set. Doing it in this order means an
+        // exception inside ejectPassengers / discard / the leave handler chain still
+        // leaves the bond in a coherent dismissed state, so a later breakBond knows
+        // to materialize-before-strip and the pet isn't lost.
+        player.setData(ModAttachments.BOND_ROSTER.get(),
+                roster.with(bondOpt.get().withDismissed(true)));
 
         // Eject any passengers (player riding the pet, etc.) and break out of any vehicle.
         entity.ejectPassengers();
@@ -292,13 +303,6 @@ public final class BondService {
         // discard() synchronously fires EntityLeaveLevelEvent, which our handler uses
         // to snapshot the bond and untrack from BondIndex. No need to repeat that here.
         entity.discard();
-
-        // Mark the bond as snapshot-only so a later breakBond knows to materialize
-        // before clearing — distinguishes this from "in an unloaded chunk" where the
-        // entity still exists and would be teleported to the player by mistake.
-        BondRoster post = player.getData(ModAttachments.BOND_ROSTER.get());
-        post.get(bondId).ifPresent(b -> player.setData(ModAttachments.BOND_ROSTER.get(),
-                post.with(b.withDismissed(true))));
 
         Kindred.LOGGER.info("[kindred] {} dismissed bond {}", player.getGameProfile().getName(), bondId);
         return DismissResult.DISMISSED;
@@ -394,7 +398,13 @@ public final class BondService {
 
     private static SummonResult materializeFresh(ServerPlayer player, Bond bond, ServerLevel targetLevel, KindredSavedData saved) {
         EntityType<?> type = BuiltInRegistries.ENTITY_TYPE.get(bond.entityType());
-        if (type == null) return SummonResult.SPAWN_FAILED;
+        if (type == null) {
+            // Mod that registered this entity type was removed. Bond is effectively
+            // dead until the mod is reinstalled.
+            Kindred.LOGGER.warn("[kindred] SPAWN_FAILED: entity type {} not in registry (bond {} for {})",
+                    bond.entityType(), bond.bondId(), player.getGameProfile().getName());
+            return SummonResult.SPAWN_FAILED;
+        }
 
         // Find a valid spawn pocket within 5x5 of the player; snap to ground.
         Vec3 spawnPos;
@@ -407,7 +417,13 @@ public final class BondService {
         }
 
         Entity entity = type.create(targetLevel);
-        if (entity == null) return SummonResult.SPAWN_FAILED;
+        if (entity == null) {
+            // Entity type's create() returned null — usually a mod-conflict or a
+            // mob that requires a special factory we're not invoking correctly.
+            Kindred.LOGGER.warn("[kindred] SPAWN_FAILED: {}.create() returned null (bond {} for {} in {})",
+                    bond.entityType(), bond.bondId(), player.getGameProfile().getName(), targetLevel.dimension().location());
+            return SummonResult.SPAWN_FAILED;
+        }
 
         entity.load(bond.nbtSnapshot());
 
@@ -433,7 +449,14 @@ public final class BondService {
 
         // addFreshEntity fires EntityJoinLevelEvent, which our handler responds to by tracking
         // in BondIndex. No explicit track needed here.
-        if (!targetLevel.addFreshEntity(entity)) return SummonResult.SPAWN_FAILED;
+        if (!targetLevel.addFreshEntity(entity)) {
+            // Rejected by the level — chunk system, world border, another mod's
+            // EntityJoinLevelEvent listener cancelled it, etc.
+            Kindred.LOGGER.warn("[kindred] SPAWN_FAILED: addFreshEntity rejected {} at {} in {} (bond {} for {})",
+                    bond.entityType(), spawnPos, targetLevel.dimension().location(),
+                    bond.bondId(), player.getGameProfile().getName());
+            return SummonResult.SPAWN_FAILED;
+        }
 
         playSummonFx(targetLevel, spawnPos.x, spawnPos.y, spawnPos.z, true);
 
@@ -636,13 +659,14 @@ public final class BondService {
     }
 
     /**
-     * True if any block within the entity's footprint or a 1-block horizontal buffer
-     * around it contains lava (source or flowing). Vertical buffer is 0 — lava
-     * directly above is a rare edge case and the floor below is already gated by
+     * True if any block within the entity's footprint or a small buffer around it
+     * contains lava (source or flowing). Buffer is 1 block horizontally and a half
+     * block above/below — catches lava flowing in at head height or pooling just
+     * under a thin floor. The floor block itself is already gated by
      * {@link #isHazardousFloor} (lava isn't face-sturdy, so it can't be a floor).
      */
     private static boolean hasLavaInOrNear(ServerLevel level, AABB box) {
-        AABB scan = box.inflate(1.0D, 0.0D, 1.0D);
+        AABB scan = box.inflate(1.0D, 0.5D, 1.0D);
         BlockPos min = BlockPos.containing(scan.minX, scan.minY, scan.minZ);
         BlockPos max = BlockPos.containing(scan.maxX - 1.0E-7D, scan.maxY - 1.0E-7D, scan.maxZ - 1.0E-7D);
         for (BlockPos p : BlockPos.betweenClosed(min, max)) {

@@ -25,7 +25,7 @@ import java.util.LinkedHashSet;
 import java.util.Optional;
 import java.util.UUID;
 
-@EventBusSubscriber(modid = Kindred.MODID, bus = EventBusSubscriber.Bus.GAME)
+@EventBusSubscriber(modid = Kindred.MODID)
 public final class PlayerEvents {
 
     @SubscribeEvent

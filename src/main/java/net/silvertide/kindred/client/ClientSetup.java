@@ -7,7 +7,7 @@ import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
 import net.silvertide.kindred.Kindred;
 import net.silvertide.kindred.client.input.Keybinds;
 
-@EventBusSubscriber(modid = Kindred.MODID, value = Dist.CLIENT, bus = EventBusSubscriber.Bus.MOD)
+@EventBusSubscriber(modid = Kindred.MODID, value = Dist.CLIENT)
 public final class ClientSetup {
 
     @SubscribeEvent

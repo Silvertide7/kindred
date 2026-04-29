@@ -20,7 +20,7 @@ import net.silvertide.kindred.network.packet.S2CBindCandidateResult;
 import net.silvertide.kindred.network.packet.S2CCancelHold;
 import net.silvertide.kindred.network.packet.S2CRosterSync;
 
-@EventBusSubscriber(modid = Kindred.MODID, bus = EventBusSubscriber.Bus.MOD)
+@EventBusSubscriber(modid = Kindred.MODID)
 public final class Networking {
 
     @SubscribeEvent

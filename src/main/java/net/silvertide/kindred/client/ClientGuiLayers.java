@@ -8,7 +8,7 @@ import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
 import net.silvertide.kindred.Kindred;
 import net.silvertide.kindred.client.screen.HoldActionOverlay;
 
-@EventBusSubscriber(modid = Kindred.MODID, value = Dist.CLIENT, bus = EventBusSubscriber.Bus.MOD)
+@EventBusSubscriber(modid = Kindred.MODID, value = Dist.CLIENT)
 public final class ClientGuiLayers {
 
     @SubscribeEvent

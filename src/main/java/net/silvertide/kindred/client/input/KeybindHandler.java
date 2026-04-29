@@ -22,7 +22,7 @@ import net.silvertide.kindred.network.packet.C2SSummonByKeybind;
 import java.util.Optional;
 import java.util.UUID;
 
-@EventBusSubscriber(modid = Kindred.MODID, value = Dist.CLIENT, bus = EventBusSubscriber.Bus.GAME)
+@EventBusSubscriber(modid = Kindred.MODID, value = Dist.CLIENT)
 public final class KeybindHandler {
 
     /**

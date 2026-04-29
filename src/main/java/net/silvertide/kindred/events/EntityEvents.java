@@ -28,7 +28,7 @@ import net.silvertide.kindred.data.KindredSavedData;
 
 import java.util.Optional;
 
-@EventBusSubscriber(modid = Kindred.MODID, bus = EventBusSubscriber.Bus.GAME)
+@EventBusSubscriber(modid = Kindred.MODID)
 public final class EntityEvents {
 
     @SubscribeEvent

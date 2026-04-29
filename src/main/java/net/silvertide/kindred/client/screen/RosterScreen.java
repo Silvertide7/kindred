@@ -212,24 +212,24 @@ public final class RosterScreen extends Screen {
         // Lock in the bind candidate at open time. No re-raycast while the screen is open.
         // The button stays hidden until the server confirms eligibility — owner UUID
         // isn't synced to the client for AbstractHorse so we can't validate locally.
+        //
+        // Three outcomes here, all driven by composing passesEntityGates +
+        // isAtCapacity:
+        //   1. Aiming at a bindable entity, room to bond → ask the server.
+        //   2. Aiming at a bindable entity but at cap → surface cap deny key.
+        //   3. Not aiming at anything bindable but at cap → surface cap deny key
+        //      anyway so the title bar's "X/Y" isn't unexplained, and LINEAR-mode
+        //      players see "Next bond unlocks at X" without needing a pet in view.
         LocalPlayer p = Minecraft.getInstance().player;
         if (p != null) {
             Entity hit = raycastEntity(p);
-            if (hit != null && passesClientGates(hit)) {
+            boolean entityBindable = hit != null && passesEntityGates(hit);
+            if (entityBindable && !isAtCapacity()) {
                 initialCandidate = hit;
                 bindCandidateConfirmed = Boolean.FALSE;  // pending until server replies
                 bindDenyKey = java.util.Optional.empty();
                 PacketDistributor.sendToServer(new C2SCheckBindCandidate(hit.getUUID()));
-            } else if (hit != null && atCapacityForHit(hit)) {
-                // Looking at something that *would* be bondable except the roster is
-                // full. Skip the server round-trip and surface the cap message directly.
-                bindDenyKey = java.util.Optional.of(capDenyKey());
-            } else if (atCapacityNoTarget()) {
-                // No bondable target in view, but the player is at their effective
-                // cap (or below the PMMO start level). Surface the cap message anyway
-                // so the title bar's "X/Y" isn't unexplained — and so LINEAR-mode
-                // players see "Next bond unlocks at X" without having to find a pet
-                // to aim at.
+            } else if (entityBindable || isAtCapacity()) {
                 bindDenyKey = java.util.Optional.of(capDenyKey());
             }
         }
@@ -544,46 +544,40 @@ public final class RosterScreen extends Screen {
         return hit != null ? hit.getEntity() : null;
     }
 
-    private boolean passesClientGates(Entity e) {
+    /**
+     * Cheap, entity-only gates the client can verify without server help.
+     * Doesn't include the capacity check — capacity is roster state, not an
+     * entity property, and is checked separately by {@link #isAtCapacity}.
+     *
+     * <p>Owner UUID isn't synced to the client for {@code AbstractHorse}, so
+     * ownership is server-only — that's why a passing entity still needs the
+     * {@code C2SCheckBindCandidate} round-trip before showing the Bind button.</p>
+     */
+    private static boolean passesEntityGates(Entity e) {
         if (!(e instanceof OwnableEntity)) return false;
         if (BuiltInRegistries.ENTITY_TYPE.wrapAsHolder(e.getType()).is(ModTags.CANT_BOND)) return false;
         if (Config.REQUIRE_SADDLEABLE.get() && !(e instanceof Saddleable)) return false;
-        if (ClientRosterData.bonds().size() >= ClientRosterData.effectiveMaxBonds()) return false;
         return true;
     }
 
-    /**
-     * Returns the deny key for the current at-cap state — pmmo_locked when the
-     * effective cap is 0 (only reachable via PMMO returning a sub-startLevel
-     * skill, since the {@code maxBonds} config has a min of 1), otherwise the
-     * regular at_capacity. The renderer further refines at_capacity into the
-     * pmmo_next_unlock variant when LINEAR mode has more headroom.
-     */
-    private static String capDenyKey() {
-        return ClientRosterData.effectiveMaxBonds() == 0
-                ? "kindred.bind.deny.pmmo_locked"
-                : "kindred.bind.deny.at_capacity";
-    }
-
-    /** True if the player has no remaining bond slots, regardless of what
-     *  they're aiming at. Distinct from {@link #atCapacityForHit}: this one
-     *  doesn't care about the entity in view, just the roster size vs. cap. */
-    private static boolean atCapacityNoTarget() {
+    /** True if the player has no remaining bond slots — either at the hard cap
+     *  or PMMO-locked at zero. */
+    private static boolean isAtCapacity() {
         int cap = ClientRosterData.effectiveMaxBonds();
         return cap == 0 || ClientRosterData.bonds().size() >= cap;
     }
 
     /**
-     * True if the entity would be bindable except the roster is full. Used to skip
-     * the server round-trip and surface a specific deny message right at screen
-     * open. Owner UUID isn't synced to the client for AbstractHorse, so we can't
-     * fully validate ownership here — we just check the cheap gates.
+     * Deny lang key for the current at-cap state — {@code pmmo_locked} when the
+     * effective cap is 0 (only reachable via PMMO returning a sub-startLevel
+     * skill, since the {@code maxBonds} config has a min of 1), otherwise the
+     * regular {@code at_capacity}. The renderer further refines {@code at_capacity}
+     * into the {@code pmmo_next_unlock} variant when LINEAR mode has more headroom.
      */
-    private boolean atCapacityForHit(Entity e) {
-        if (!(e instanceof OwnableEntity)) return false;
-        if (BuiltInRegistries.ENTITY_TYPE.wrapAsHolder(e.getType()).is(ModTags.CANT_BOND)) return false;
-        if (Config.REQUIRE_SADDLEABLE.get() && !(e instanceof Saddleable)) return false;
-        return ClientRosterData.bonds().size() >= ClientRosterData.effectiveMaxBonds();
+    private static String capDenyKey() {
+        return ClientRosterData.effectiveMaxBonds() == 0
+                ? "kindred.bind.deny.pmmo_locked"
+                : "kindred.bind.deny.at_capacity";
     }
 
     private void processRowHold(int mouseX, int mouseY) {

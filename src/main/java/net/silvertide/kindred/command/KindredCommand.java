@@ -41,7 +41,7 @@ import java.util.UUID;
  *
  * Indices are derived from your roster sorted by bondedAt (oldest first).
  */
-@EventBusSubscriber(modid = Kindred.MODID, bus = EventBusSubscriber.Bus.GAME)
+@EventBusSubscriber(modid = Kindred.MODID)
 public final class KindredCommand {
 
     @SubscribeEvent

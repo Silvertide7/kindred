@@ -92,20 +92,68 @@ public final class EntityEvents {
             return;
         }
 
-        // Non-permanent death: stamp diedAt for the revival cooldown (only if the
-        // owner is online; offline-owner case is a known follow-up). EntityLeaveLevelEvent
-        // fires when the corpse is removed and snapshots the dead state; health is
-        // restored when the bond is summoned next (BondManager.materializeFresh).
-        if (Config.revivalCooldownMs() > 0L) {
-            ServerPlayer owner = level.getServer().getPlayerList().getPlayer(bonded.ownerUUID());
-            if (owner != null) {
-                BondRoster roster = owner.getData(ModAttachments.BOND_ROSTER.get());
-                roster.get(bonded.bondId()).ifPresent(b -> {
-                    Bond updated = b.withDiedAt(Optional.of(System.currentTimeMillis()));
-                    owner.setData(ModAttachments.BOND_ROSTER.get(), roster.with(updated));
-                });
-            }
+        // Non-permanent death: capture a "death snapshot" of the entity BEFORE vanilla's
+        // dropAllDeathLoot runs. This is the source of truth for revival.
+        //
+        // Why pre-drop: vanilla's dropEquipment is inconsistent. Mob.dropEquipment clears
+        // EquipmentSlot.BODY (horse body armor) after capturing for LivingDropsEvent, but
+        // AbstractHorse.dropEquipment leaves inventory[0/saddle] and chest items in place
+        // even after iterating them into the captured drops. If we snapshot post-death
+        // (at EntityLeaveLevelEvent), with dropLootOnDeath=false we'd lose armor and keep
+        // saddle (half-restoration); with dropLootOnDeath=true the world gets the saddle
+        // AND the entity keeps it (double-grant). Snapshotting before vanilla touches
+        // anything sidesteps both bugs — we then strip the snapshot only when items
+        // genuinely drop to the world.
+        //
+        // diedAt is also set here so EntityLeaveLevelEvent's snapshotEntity knows to skip
+        // overwriting our death snapshot with the post-drop carcass state. The revival
+        // cooldown gate in BondManager.summon ignores diedAt when revivalCooldownMs=0,
+        // so this is safe to set regardless of cooldown config.
+        CompoundTag deathNbt = entity.saveWithoutId(new CompoundTag());
+        if (Config.DROP_LOOT_ON_DEATH.get()) {
+            stripItemsFromSnapshot(deathNbt);
         }
+
+        long now = System.currentTimeMillis();
+        ResourceKey<Level> dim = level.dimension();
+        Vec3 pos = entity.position();
+
+        ServerPlayer owner = level.getServer().getPlayerList().getPlayer(bonded.ownerUUID());
+        if (owner != null) {
+            BondRoster roster = owner.getData(ModAttachments.BOND_ROSTER.get());
+            roster.get(bonded.bondId()).ifPresent(b -> {
+                Bond updated = b.withSnapshot(deathNbt, dim, pos)
+                                .withDiedAt(Optional.of(now));
+                owner.setData(ModAttachments.BOND_ROSTER.get(), roster.with(updated));
+            });
+        } else {
+            // Offline owner: persist the pre-drop snapshot to the world's offline cache.
+            // diedAt isn't tracked for offline owners (known follow-up); revival cooldown
+            // won't apply to a pet whose owner was offline at time of death.
+            KindredSavedData.get(level).putOfflineSnapshot(bonded.bondId(),
+                    new OfflineSnapshot(deathNbt, dim, pos));
+        }
+    }
+
+    /**
+     * Clear every item-storage NBT key we know about, leaving the entity's "self"
+     * (variant, age, attributes, custom name, AI state) intact. Used when
+     * {@code dropLootOnDeath=true} so the world keeps the dropped items and the
+     * revived pet comes back empty.
+     *
+     * <p>Hand-rolled because vanilla doesn't expose an "empty all items" helper and
+     * 1.21 stores equipment across several distinct keys depending on entity type:
+     * Mob's {@code ArmorItems} / {@code HandItems} lists, AbstractHorse's
+     * {@code Items} list (saddle + chest), and the BodyArmor item slot. Adding
+     * a missing key is cheap; missing one means a stray item rides through revival.</p>
+     */
+    private static void stripItemsFromSnapshot(CompoundTag nbt) {
+        nbt.remove("SaddleItem");       // AbstractHorse saddle — separate top-level compound, NOT in Items
+        nbt.remove("Items");            // AbstractChestedHorse chest contents (slots 1+)
+        nbt.remove("ArmorItems");       // Mob armor slots (head/chest/legs/feet)
+        nbt.remove("HandItems");        // Mob hand slots (mainhand/offhand)
+        nbt.remove("body_armor_item");  // 1.21 horse / llama / wolf body armor
+        nbt.remove("ChestedHorse");     // donkey/llama chest flag — chest gone, flag should be too
     }
 
     /**
@@ -134,11 +182,22 @@ public final class EntityEvents {
     }
 
     private static void snapshotEntity(ServerLevel level, Entity entity, Bonded bonded) {
+        ServerPlayer owner = level.getServer().getPlayerList().getPlayer(bonded.ownerUUID());
+
+        // If the bond already has a death snapshot (captured at LivingDeathEvent before
+        // vanilla touched equipment), don't overwrite it with the post-drop carcass.
+        // This handler also fires for chunk unloads / dimension changes during the
+        // ~20-tick death animation, and for the discard at the end of it — none of which
+        // should clobber the authoritative pre-drop snapshot.
+        if (owner != null) {
+            BondRoster preCheck = owner.getData(ModAttachments.BOND_ROSTER.get());
+            if (preCheck.get(bonded.bondId()).flatMap(Bond::diedAt).isPresent()) return;
+        }
+
         CompoundTag nbt = entity.saveWithoutId(new CompoundTag());
         ResourceKey<Level> dim = level.dimension();
         Vec3 pos = entity.position();
 
-        ServerPlayer owner = level.getServer().getPlayerList().getPlayer(bonded.ownerUUID());
         if (owner != null) {
             BondRoster roster = owner.getData(ModAttachments.BOND_ROSTER.get());
             Optional<Bond> bond = roster.get(bonded.bondId());

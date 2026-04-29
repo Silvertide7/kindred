@@ -5,8 +5,10 @@ import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.core.UUIDUtil;
 
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -81,5 +83,25 @@ public record BondRoster(Map<UUID, Bond> bonds, Optional<UUID> activePetId) {
 
     public int size() {
         return bonds.size();
+    }
+
+    /**
+     * Returns a roster with {@code bondId} moved by {@code delta} positions in the
+     * bond order (negative = up, positive = down). Clamps to valid index bounds.
+     * The roster's {@link Map} is a {@link LinkedHashMap} and the codec preserves
+     * iteration order across save/load, so this is the source of truth for screen
+     * row order.
+     */
+    public BondRoster withMoved(UUID bondId, int delta) {
+        if (!bonds.containsKey(bondId) || delta == 0) return this;
+        List<UUID> ids = new ArrayList<>(bonds.keySet());
+        int idx = ids.indexOf(bondId);
+        int newIdx = Math.max(0, Math.min(ids.size() - 1, idx + delta));
+        if (idx == newIdx) return this;
+        ids.remove(idx);
+        ids.add(newIdx, bondId);
+        Map<UUID, Bond> reordered = new LinkedHashMap<>();
+        for (UUID id : ids) reordered.put(id, bonds.get(id));
+        return new BondRoster(reordered, activePetId);
     }
 }

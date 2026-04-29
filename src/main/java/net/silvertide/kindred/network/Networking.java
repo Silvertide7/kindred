@@ -12,6 +12,7 @@ import net.silvertide.kindred.network.packet.C2SClaimEntity;
 import net.silvertide.kindred.network.packet.C2SDismissBond;
 import net.silvertide.kindred.network.packet.C2SOpenRoster;
 import net.silvertide.kindred.network.packet.C2SRenameBond;
+import net.silvertide.kindred.network.packet.C2SReorderBond;
 import net.silvertide.kindred.network.packet.C2SSetActivePet;
 import net.silvertide.kindred.network.packet.C2SSummonBond;
 import net.silvertide.kindred.network.packet.C2SSummonByKeybind;
@@ -34,6 +35,7 @@ public final class Networking {
         registrar.playToServer(C2SSetActivePet.TYPE, C2SSetActivePet.STREAM_CODEC, ServerPacketHandler::onSetActivePet);
         registrar.playToServer(C2SDismissBond.TYPE, C2SDismissBond.STREAM_CODEC, ServerPacketHandler::onDismissBond);
         registrar.playToServer(C2SRenameBond.TYPE, C2SRenameBond.STREAM_CODEC, ServerPacketHandler::onRenameBond);
+        registrar.playToServer(C2SReorderBond.TYPE, C2SReorderBond.STREAM_CODEC, ServerPacketHandler::onReorderBond);
         registrar.playToServer(C2SCheckBindCandidate.TYPE, C2SCheckBindCandidate.STREAM_CODEC, ServerPacketHandler::onCheckBindCandidate);
 
         registrar.playToClient(S2CRosterSync.TYPE, S2CRosterSync.STREAM_CODEC, ClientPacketHandler::onRosterSync);

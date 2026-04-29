@@ -18,6 +18,7 @@ import net.silvertide.kindred.network.packet.C2SClaimEntity;
 import net.silvertide.kindred.network.packet.C2SDismissBond;
 import net.silvertide.kindred.network.packet.C2SOpenRoster;
 import net.silvertide.kindred.network.packet.C2SRenameBond;
+import net.silvertide.kindred.network.packet.C2SReorderBond;
 import net.silvertide.kindred.network.packet.C2SSetActivePet;
 import net.silvertide.kindred.network.packet.C2SSummonBond;
 import net.silvertide.kindred.network.packet.C2SSummonByKeybind;
@@ -27,7 +28,6 @@ import net.silvertide.kindred.registry.ModAttachments;
 import net.silvertide.kindred.server.BondManager;
 import net.silvertide.kindred.server.GlobalSummonCooldownTracker;
 
-import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -178,6 +178,18 @@ public final class ServerPacketHandler {
         return s;
     }
 
+    public static void onReorderBond(C2SReorderBond payload, IPayloadContext context) {
+        context.enqueueWork(() -> {
+            if (!(context.player() instanceof ServerPlayer player)) return;
+            BondRoster roster = player.getData(ModAttachments.BOND_ROSTER.get());
+            BondRoster updated = roster.withMoved(payload.bondId(), payload.delta());
+            if (updated != roster) {
+                player.setData(ModAttachments.BOND_ROSTER.get(), updated);
+                sendRosterSync(player);
+            }
+        });
+    }
+
     public static void onSetActivePet(C2SSetActivePet payload, IPayloadContext context) {
         context.enqueueWork(() -> {
             if (!(context.player() instanceof ServerPlayer player)) return;
@@ -195,8 +207,9 @@ public final class ServerPacketHandler {
         long now = System.currentTimeMillis();
         long cooldownMs = Config.SUMMON_COOLDOWN_TICKS.get() * 50L;
         long revivalCooldownMs = Config.revivalCooldownMs();
+        // Use the LinkedHashMap's insertion order — that's the player's chosen row
+        // order (mutated via C2SReorderBond and preserved across save/load).
         List<BondView> views = roster.bonds().values().stream()
-                .sorted(Comparator.comparingLong(Bond::bondedAt))
                 .map(b -> {
                     long remaining = Math.max(0L, cooldownMs - (now - b.lastSummonedAt()));
                     long revivalRemaining = 0L;

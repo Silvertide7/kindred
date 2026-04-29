@@ -19,7 +19,23 @@ Set true in `BondManager.dismiss()` after `entity.discard()`, cleared in `materi
 
 ### `Bond.diedAt` (revival cooldown)
 
-`Optional<Long>` set in `LivingDeathEvent` handler when `deathIsPermanent=false` and `revivalCooldownSeconds > 0`. Cleared on successful materialize (the revival itself). Drives `SummonResult.REVIVAL_PENDING` and the "Respawning Xs" UI.
+`Optional<Long>` set in `LivingDeathEvent` handler when `deathIsPermanent=false`. Cleared on successful materialize (the revival itself). Drives `SummonResult.REVIVAL_PENDING` and the "Limbo" subtitle when paired with `revivalCooldownSeconds > 0`. Also serves as the "skip leave-level snapshot" signal — see below.
+
+### Snapshot-at-death (pre-drop) for revival
+
+The bond's `nbtSnapshot` is captured at `LivingDeathEvent` (before vanilla's `dropAllDeathLoot` runs), not at `EntityLeaveLevelEvent` after the death animation.
+
+**Why pre-drop**: vanilla's `dropEquipment` is inconsistent.
+- `Mob.dropEquipment` clears `EquipmentSlot.BODY` (horse body armor) right after capturing the item for `LivingDropsEvent`.
+- `AbstractHorse.dropEquipment` iterates the saddle/chest inventory into the captured drops but does NOT clear the inventory afterward.
+
+If we let the post-death snapshot run (at the leave-level handler that fires when the corpse is discarded after the ~20-tick death tick), we end up with a half-stripped state:
+- `dropLootOnDeath=false` (cancel `LivingDropsEvent`): armor was already wiped from the slot, saddle remained → revive has saddle but no armor.
+- `dropLootOnDeath=true` (let drops happen): world gets the saddle drop AND the entity keeps it → revive has the saddle plus the world has a duplicate.
+
+Capturing pre-drop NBT and stripping it ourselves when `dropLootOnDeath=true` (`stripItemsFromSnapshot` clears `Items` / `ArmorItems` / `HandItems` / `body_armor_item` / `ChestedHorse`) gives consistent behavior in both cases.
+
+**Skipping the leave-level snapshot**: `snapshotEntity` checks `bond.diedAt().isPresent()` before serializing. Once the death snapshot is in place, chunk unloads, dimension changes, and the eventual discard during the death animation must not overwrite it. Cleared on successful revival via `withDiedAt(Optional.empty())` in `materializeFresh`.
 
 ### `BondView.loaded` (wire field)
 

@@ -26,6 +26,7 @@ import net.silvertide.kindred.network.packet.C2SClaimEntity;
 import net.silvertide.kindred.network.packet.C2SDismissBond;
 import net.silvertide.kindred.network.packet.C2SOpenRoster;
 import net.silvertide.kindred.network.packet.C2SRenameBond;
+import net.silvertide.kindred.network.packet.C2SReorderBond;
 import net.silvertide.kindred.network.packet.C2SSetActivePet;
 import net.silvertide.kindred.network.packet.C2SSummonBond;
 import net.silvertide.kindred.registry.ModTags;
@@ -92,13 +93,22 @@ public final class RosterScreen extends Screen {
     private static final int C_STAR_ACTIVE = 0xFFE7B43B;
     private static final int C_STAR_INACTIVE = 0xFF4A5260;
     private static final int C_STAR_HOVER = 0xFF8A95A8;
+    /** Radial cooldown indicator: light wedge that drains counter-clockwise as
+     *  the cooldown elapses. Drawn centered on the Summon button (replaces the
+     *  text label entirely while the cooldown is running). */
+    private static final int C_PIE_FILL = 0xFFB0C4D8;
+    private static final int C_PIE_RADIUS = 5;
 
     private static final int STAR_COL_W = 16;
     private static final int ACTION_BTN_H = 14;
     private static final int ACTION_BTN_GAP = 2;
     private static final int PANE_BTN_PAD = 4;
-    /** Total vertical space the two stacked pane buttons occupy. */
-    private static final int PANE_BTN_AREA_H = PANE_BTN_PAD + ACTION_BTN_H + ACTION_BTN_GAP + ACTION_BTN_H + PANE_BTN_PAD;
+    /** Total vertical space the stacked pane buttons occupy. Three rows: Move Up |
+     *  Move Down (split), Rename (full width), Set Active (full width). */
+    private static final int PANE_BTN_AREA_H = PANE_BTN_PAD
+            + ACTION_BTN_H + ACTION_BTN_GAP
+            + ACTION_BTN_H + ACTION_BTN_GAP
+            + ACTION_BTN_H + PANE_BTN_PAD;
     /** Top padding inside the preview pane — keeps tall entities (horses, llamas)
      *  from cropping their heads against the panel border. */
     private static final int PREVIEW_TOP_PAD = 16;
@@ -204,6 +214,12 @@ public final class RosterScreen extends Screen {
                 bindCandidateConfirmed = Boolean.FALSE;  // pending until server replies
                 bindDenyKey = java.util.Optional.empty();
                 PacketDistributor.sendToServer(new C2SCheckBindCandidate(hit.getUUID()));
+            } else if (hit != null && atCapacityForHit(hit)) {
+                // Looking at something that *would* be bondable except the roster is
+                // full. Skip the server round-trip and surface the at-capacity message
+                // directly so the footer shows "Max bonds reached" instead of the
+                // generic "look at a tamed pet" hint.
+                bindDenyKey = java.util.Optional.of("kindred.bind.deny.at_capacity");
             }
         }
 
@@ -251,7 +267,7 @@ public final class RosterScreen extends Screen {
         if (ClientRosterData.isGlobalSummonOnCooldown()) {
             long remainingMs = ClientRosterData.globalCooldownRemainingMsNow();
             Component text = Component.translatable("kindred.screen.summon_cooldown",
-                    String.format("%.1f", remainingMs / 1000.0F));
+                    formatDurationCoarse(remainingMs));
             int tw = font.width(text);
             g.drawString(font, text, leftPos + PANEL_WIDTH - 6 - tw, topPos + 8, C_TEXT_MUTED);
         }
@@ -333,8 +349,41 @@ public final class RosterScreen extends Screen {
         int btnW = PREVIEW_W - 8;
         int setActiveBtnY = paneBottom - PANE_BTN_PAD - ACTION_BTN_H;
         int renameBtnY = setActiveBtnY - ACTION_BTN_GAP - ACTION_BTN_H;
+        int moveBtnY = renameBtnY - ACTION_BTN_GAP - ACTION_BTN_H;
 
-        // Rename button (top of stack)
+        // Move Up | Move Down — split row at the top of the stack. Disabled when the
+        // selected bond is already at the corresponding edge of the list.
+        int moveHalfW = (btnW - ACTION_BTN_GAP) / 2;
+        int moveUpX = btnX;
+        int moveDownX = btnX + moveHalfW + ACTION_BTN_GAP;
+        int moveDownW = btnW - moveHalfW - ACTION_BTN_GAP;
+
+        List<BondView> bonds = ClientRosterData.bonds();
+        int bondIdx = -1;
+        for (int i = 0; i < bonds.size(); i++) {
+            if (bonds.get(i).bondId().equals(selected.bondId())) {
+                bondIdx = i;
+                break;
+            }
+        }
+        boolean canMoveUp = bondIdx > 0;
+        boolean canMoveDown = bondIdx >= 0 && bondIdx < bonds.size() - 1;
+        boolean moveUpHover = canMoveUp && inBox(mouseX, mouseY, moveUpX, moveBtnY, moveHalfW, ACTION_BTN_H);
+        boolean moveDownHover = canMoveDown && inBox(mouseX, mouseY, moveDownX, moveBtnY, moveDownW, ACTION_BTN_H);
+        int moveUpColor = !canMoveUp
+                ? C_BTN_DISMISS_DISABLED
+                : (moveUpHover ? C_BTN_CLAIM_HOVER : C_BTN_CLAIM);
+        int moveDownColor = !canMoveDown
+                ? C_BTN_DISMISS_DISABLED
+                : (moveDownHover ? C_BTN_CLAIM_HOVER : C_BTN_CLAIM);
+        drawButton(g, moveUpX, moveBtnY, moveHalfW, ACTION_BTN_H,
+                Component.translatable("kindred.screen.move_up"),
+                moveUpColor, 0F, canMoveUp ? C_TEXT : C_BTN_TEXT_DISABLED);
+        drawButton(g, moveDownX, moveBtnY, moveDownW, ACTION_BTN_H,
+                Component.translatable("kindred.screen.move_down"),
+                moveDownColor, 0F, canMoveDown ? C_TEXT : C_BTN_TEXT_DISABLED);
+
+        // Rename button (middle)
         boolean editingThis = selected.bondId().equals(renamingBondId);
         boolean renameHover = !editingThis && inBox(mouseX, mouseY, btnX, renameBtnY, btnW, ACTION_BTN_H);
         int renameColor = editingThis
@@ -365,6 +414,10 @@ public final class RosterScreen extends Screen {
 
     private int setActiveBtnY() {
         return previewBottom() - PANE_BTN_PAD - ACTION_BTN_H;
+    }
+
+    private int moveBtnY() {
+        return renameBtnY() - ACTION_BTN_GAP - ACTION_BTN_H;
     }
 
     private BondView currentSelection() {
@@ -426,6 +479,19 @@ public final class RosterScreen extends Screen {
         if (Config.REQUIRE_SADDLEABLE.get() && !(e instanceof Saddleable)) return false;
         if (ClientRosterData.bonds().size() >= Config.MAX_BONDS.get()) return false;
         return true;
+    }
+
+    /**
+     * True if the entity would be bindable except the roster is full. Used to skip
+     * the server round-trip and surface a specific deny message right at screen
+     * open. Owner UUID isn't synced to the client for AbstractHorse, so we can't
+     * fully validate ownership here — we just check the cheap gates.
+     */
+    private boolean atCapacityForHit(Entity e) {
+        if (!(e instanceof OwnableEntity)) return false;
+        if (BuiltInRegistries.ENTITY_TYPE.wrapAsHolder(e.getType()).is(ModTags.BOND_BLOCKLIST)) return false;
+        if (Config.REQUIRE_SADDLEABLE.get() && !(e instanceof Saddleable)) return false;
+        return ClientRosterData.bonds().size() >= Config.MAX_BONDS.get();
     }
 
     private void processRowHold(int mouseX, int mouseY) {
@@ -519,11 +585,17 @@ public final class RosterScreen extends Screen {
         g.drawString(font, name, textX, y + ROW_NAME_Y_OFFSET, nameColor);
 
         // Subtitle below the button line: "Horse · Overworld" when loaded,
-        // "Horse · Resting" when dismissed/stored (no live entity).
-        Component subtitle = entityTypeName(bond).copy().append(" · ").append(
-                bond.loaded()
-                        ? dimensionName(bond.lastSeenDim())
-                        : Component.translatable("kindred.screen.state_resting"));
+        // "Horse · Limbo" while revival is pending (dead, respawn-locked),
+        // "Horse · Resting" when otherwise dismissed/stored.
+        Component stateOrDim;
+        if (ClientRosterData.isRevivalPending(bond)) {
+            stateOrDim = Component.translatable("kindred.screen.state_limbo");
+        } else if (bond.loaded()) {
+            stateOrDim = dimensionName(bond.lastSeenDim());
+        } else {
+            stateOrDim = Component.translatable("kindred.screen.state_resting");
+        }
+        Component subtitle = entityTypeName(bond).copy().append(" · ").append(stateOrDim);
         g.drawString(font, subtitle, textX, y + ROW_SUBTITLE_Y_OFFSET, C_TEXT_MUTED);
 
         int btnH = ROW_BTN_H;
@@ -558,11 +630,35 @@ public final class RosterScreen extends Screen {
         int summonColor = summonDisabled
                 ? C_BTN_SUMMON_DISABLED
                 : (summonHover ? C_BTN_SUMMON_HOVER : C_BTN_SUMMON);
+        // Disabled-by-time states (revival, per-bond cooldown, global cooldown) all
+        // share the same UI: no button label, radial sweep centered, precise time on
+        // hover. Revival is checked first since "the pet is dead" outranks "rate-
+        // limited"; otherwise we pick whichever cooldown has more time left so the
+        // wedge matches the actual block.
+        long sweepRemainingMs = 0L;
+        long sweepTotalMs = 0L;
+        Component tooltipText = null;
         Component summonLabel;
         if (ClientRosterData.isRevivalPending(bond)) {
-            long remainingMs = ClientRosterData.revivalRemainingMsNow(bond);
-            int seconds = (int) ((remainingMs + 999L) / 1000L);  // round up
-            summonLabel = Component.translatable("kindred.screen.respawning", seconds);
+            sweepRemainingMs = ClientRosterData.revivalRemainingMsNow(bond);
+            sweepTotalMs = Config.revivalCooldownMs();
+            tooltipText = Component.translatable("kindred.screen.respawning",
+                    formatDurationCoarse(sweepRemainingMs));
+            summonLabel = Component.empty();
+        } else if (summonDisabled) {
+            long perBondRemaining = ClientRosterData.bondCooldownRemainingMsNow(bond);
+            long perBondTotal = Config.SUMMON_COOLDOWN_TICKS.get() * 50L;
+            long globalRemaining = ClientRosterData.globalCooldownRemainingMsNow();
+            long globalTotal = Config.summonGlobalCooldownMs();
+            if (perBondRemaining >= globalRemaining) {
+                sweepRemainingMs = perBondRemaining;
+                sweepTotalMs = perBondTotal;
+            } else {
+                sweepRemainingMs = globalRemaining;
+                sweepTotalMs = globalTotal;
+            }
+            tooltipText = Component.literal(formatDurationCoarse(sweepRemainingMs));
+            summonLabel = Component.empty();
         } else {
             summonLabel = Component.translatable("kindred.screen.summon");
         }
@@ -572,6 +668,18 @@ public final class RosterScreen extends Screen {
                 summonColor,
                 summonHoldProgress,
                 summonTextColor);
+        if (sweepTotalMs > 0L && sweepRemainingMs > 0L) {
+            float progress = Math.min(1F, sweepRemainingMs / (float) sweepTotalMs);
+            int pieCx = summonX + summonW / 2;
+            int pieCy = btnY + btnH / 2;
+            drawRadialSweep(g, pieCx, pieCy, C_PIE_RADIUS, progress, C_PIE_FILL);
+            // Long cooldowns (20m+) make the wedge motion imperceptible, so surface
+            // precise text on hover. Deferred via setTooltipForNextRenderPass so it
+            // renders above the row scissor and any later panel content.
+            if (tooltipText != null && inBox(mx, my, summonX, btnY, summonW, btnH)) {
+                setTooltipForNextRenderPass(tooltipText);
+            }
+        }
 
         if (armed) {
             int confirmX = dismissX;
@@ -642,6 +750,44 @@ public final class RosterScreen extends Screen {
         return sb.toString();
     }
 
+    /**
+     * Coarse human-readable duration: "1h 5m", "5m 30s", or "30s". Rounds up so a
+     * sub-second residual still reads as "1s" instead of "0s".
+     */
+    private static String formatDurationCoarse(long ms) {
+        long totalSeconds = (ms + 999L) / 1000L;
+        long hours = totalSeconds / 3600L;
+        long minutes = (totalSeconds % 3600L) / 60L;
+        long seconds = totalSeconds % 60L;
+        if (hours > 0) return hours + "h " + minutes + "m";
+        if (minutes > 0) return minutes + "m " + seconds + "s";
+        return seconds + "s";
+    }
+
+    /**
+     * Clock-style radial cooldown indicator centered at (cx, cy). The wedge fills the
+     * full circle at {@code progress = 1} and shrinks counter-clockwise to nothing as
+     * the cooldown elapses (matching MOBA-style ability cooldown convention).
+     *
+     * <p>Implemented by sampling each pixel in the bounding square and filling the ones
+     * inside the disc that fall within the wedge. Cheap at small radii (≤ ~8 px).</p>
+     */
+    private static void drawRadialSweep(GuiGraphics g, int cx, int cy, int radius, float progress, int color) {
+        int r2 = radius * radius;
+        double sweepRad = progress * Math.PI * 2.0;
+        for (int dy = -radius; dy <= radius; dy++) {
+            for (int dx = -radius; dx <= radius; dx++) {
+                if (dx * dx + dy * dy > r2) continue;
+                // Angle from 12 o'clock, increasing clockwise. atan2(dx, -dy) gives
+                // -PI..PI with 0 = up, positive = right; shift to 0..2PI.
+                double angle = Math.atan2(dx, -dy);
+                if (angle < 0) angle += Math.PI * 2.0;
+                if (angle > sweepRad) continue;
+                g.fill(cx + dx, cy + dy, cx + dx + 1, cy + dy + 1, color);
+            }
+        }
+    }
+
     /** 5x5 procedural diamond ("star" stand-in), centered at (cx, cy). */
     private static void drawStar(GuiGraphics g, int cx, int cy, int color) {
         g.fill(cx,     cy - 2, cx + 1, cy - 1, color);
@@ -672,12 +818,43 @@ public final class RosterScreen extends Screen {
             }
         }
 
-        // Pane action buttons: Rename (top) + Set Active (bottom). Click anywhere else
-        // commits any in-progress rename first, then proceeds normally.
+        // Pane action buttons: Move Up | Move Down (top), Rename (middle), Set Active
+        // (bottom). Click anywhere else commits any in-progress rename first, then
+        // proceeds normally.
         BondView selectedView = currentSelection();
         if (selectedView != null) {
             int btnX = previewX + 4;
             int btnW = PREVIEW_W - 8;
+            int moveHalfW = (btnW - ACTION_BTN_GAP) / 2;
+            int moveDownX = btnX + moveHalfW + ACTION_BTN_GAP;
+            int moveDownW = btnW - moveHalfW - ACTION_BTN_GAP;
+
+            // Compute selected bond's position so we can short-circuit clicks on a
+            // disabled-edge button (no packet sent if the bond is already at the top
+            // for Up, or bottom for Down).
+            List<BondView> bonds = ClientRosterData.bonds();
+            int bondIdx = -1;
+            for (int i = 0; i < bonds.size(); i++) {
+                if (bonds.get(i).bondId().equals(selectedView.bondId())) {
+                    bondIdx = i;
+                    break;
+                }
+            }
+
+            if (inBox(mxAll, myAll, btnX, moveBtnY(), moveHalfW, ACTION_BTN_H)) {
+                if (bondIdx > 0) {
+                    if (renamingBondId != null) commitRename();
+                    PacketDistributor.sendToServer(new C2SReorderBond(selectedView.bondId(), -1));
+                }
+                return true;
+            }
+            if (inBox(mxAll, myAll, moveDownX, moveBtnY(), moveDownW, ACTION_BTN_H)) {
+                if (bondIdx >= 0 && bondIdx < bonds.size() - 1) {
+                    if (renamingBondId != null) commitRename();
+                    PacketDistributor.sendToServer(new C2SReorderBond(selectedView.bondId(), 1));
+                }
+                return true;
+            }
 
             if (inBox(mxAll, myAll, btnX, renameBtnY(), btnW, ACTION_BTN_H)) {
                 if (renamingBondId != null) commitRename();

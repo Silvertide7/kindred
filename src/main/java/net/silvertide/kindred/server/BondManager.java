@@ -5,6 +5,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.tags.FluidTags;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
@@ -23,6 +24,8 @@ import net.minecraft.world.entity.OwnableEntity;
 import net.minecraft.world.entity.Saddleable;
 import net.minecraft.world.entity.TamableAnimal;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.CampfireBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
@@ -491,15 +494,24 @@ public final class BondManager {
         }
         ranked.sort(Comparator.comparingDouble(Candidate::score).reversed());
 
+        // Two-pass: prefer dry footprints across the entire 5x5 area before settling
+        // for a wet one. A pet shouldn't materialize in the pond when there's a
+        // patch of grass two tiles further from the player.
         for (Candidate c : ranked) {
-            Optional<Vec3> spot = tryColumn(level, pp.offset(c.dx, 0, c.dz), dims);
+            Optional<Vec3> spot = tryColumn(level, pp.offset(c.dx, 0, c.dz), dims, false);
             if (spot.isPresent()) return spot;
         }
-        // Last resort: the player's own column.
-        return tryColumn(level, pp, dims);
+        Optional<Vec3> dryOnPlayer = tryColumn(level, pp, dims, false);
+        if (dryOnPlayer.isPresent()) return dryOnPlayer;
+
+        for (Candidate c : ranked) {
+            Optional<Vec3> spot = tryColumn(level, pp.offset(c.dx, 0, c.dz), dims, true);
+            if (spot.isPresent()) return spot;
+        }
+        return tryColumn(level, pp, dims, true);
     }
 
-    private static Optional<Vec3> tryColumn(ServerLevel level, BlockPos start, EntityDimensions dims) {
+    private static Optional<Vec3> tryColumn(ServerLevel level, BlockPos start, EntityDimensions dims, boolean allowWater) {
         int minY = level.getMinBuildHeight();
         int maxY = level.getMaxBuildHeight();
         // dy = -1 is one block above the player (handles a step-up), 0 is player level,
@@ -512,15 +524,68 @@ public final class BondManager {
             BlockPos floor = top.below();
             BlockState floorState = level.getBlockState(floor);
             if (!floorState.isFaceSturdy(level, floor, Direction.UP)) continue;
+            if (isHazardousFloor(floorState)) return Optional.empty();
             AABB box = dims.makeBoundingBox(top.getX() + 0.5D, top.getY(), top.getZ() + 0.5D);
-            if (level.noCollision(box)) {
-                return Optional.of(new Vec3(top.getX() + 0.5D, top.getY(), top.getZ() + 0.5D));
+            if (!level.noCollision(box)) {
+                // Sturdy floor here but the pet's bounding box hits something above it.
+                // Don't keep looking deeper in this column — anything below is buried.
+                return Optional.empty();
             }
-            // Sturdy floor here but the pet's bounding box hits something above it.
-            // Don't keep looking deeper in this column — anything below is buried.
-            return Optional.empty();
+            // Lava has no collision shape, so noCollision passes through it. Reject any
+            // candidate whose footprint OR a 1-block horizontal buffer contains lava.
+            // Buffer guards against landing right beside a lava stream the pet could
+            // get pushed into, or that would burn the pet from adjacent.
+            if (hasLavaInOrNear(level, box)) return Optional.empty();
+            // Water is fine for most pets but ugly when the player is standing on shore.
+            // findSpawnLocation runs a dry-only pass first; this column is rejected then
+            // and revisited on the second pass with allowWater=true.
+            if (!allowWater && hasFluidInPocket(level, box, FluidTags.WATER)) return Optional.empty();
+            return Optional.of(new Vec3(top.getX() + 0.5D, top.getY(), top.getZ() + 0.5D));
         }
         return Optional.empty();
+    }
+
+    /**
+     * Floor blocks that are face-sturdy but immediately damage anything standing on
+     * them. Pre-existing isFaceSturdy gate already filters non-solid floors (lava,
+     * water, air); this catches the dry-but-burning floors.
+     */
+    private static boolean isHazardousFloor(BlockState state) {
+        var block = state.getBlock();
+        if (block == Blocks.MAGMA_BLOCK) return true;
+        if (block == Blocks.FIRE || block == Blocks.SOUL_FIRE) return true;
+        if ((block == Blocks.CAMPFIRE || block == Blocks.SOUL_CAMPFIRE)
+                && state.getValue(CampfireBlock.LIT)) return true;
+        return false;
+    }
+
+    /**
+     * True if any block within the entity's footprint or a 1-block horizontal buffer
+     * around it contains lava (source or flowing). Vertical buffer is 0 — lava
+     * directly above is a rare edge case and the floor below is already gated by
+     * {@link #isHazardousFloor} (lava isn't face-sturdy, so it can't be a floor).
+     */
+    private static boolean hasLavaInOrNear(ServerLevel level, AABB box) {
+        AABB scan = box.inflate(1.0D, 0.0D, 1.0D);
+        BlockPos min = BlockPos.containing(scan.minX, scan.minY, scan.minZ);
+        BlockPos max = BlockPos.containing(scan.maxX - 1.0E-7D, scan.maxY - 1.0E-7D, scan.maxZ - 1.0E-7D);
+        for (BlockPos p : BlockPos.betweenClosed(min, max)) {
+            if (level.getFluidState(p).is(FluidTags.LAVA)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * True if any block within the entity's footprint contains the given fluid (no
+     * horizontal buffer). Used to bias spawn placement toward dry land first.
+     */
+    private static boolean hasFluidInPocket(ServerLevel level, AABB box, net.minecraft.tags.TagKey<net.minecraft.world.level.material.Fluid> fluidTag) {
+        BlockPos min = BlockPos.containing(box.minX, box.minY, box.minZ);
+        BlockPos max = BlockPos.containing(box.maxX - 1.0E-7D, box.maxY - 1.0E-7D, box.maxZ - 1.0E-7D);
+        for (BlockPos p : BlockPos.betweenClosed(min, max)) {
+            if (level.getFluidState(p).is(fluidTag)) return true;
+        }
+        return false;
     }
 
     private BondManager() {}

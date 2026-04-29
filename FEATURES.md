@@ -50,12 +50,12 @@ Nice things that make it feel finished, but you can ship without them.
 - ✅ **Bond count display** — "X/Y" in the title bar's left side, matching the cooldown indicator on the right.
 - ✅ **Loaded vs stored state in subtitle** — "Horse · Overworld" when loaded, "Horse · Resting" when dismissed/stored. Driven by `BondView.loaded` (server checks `BondIndex.find(...).isPresent()`).
 - ✅ **Disabled buttons clearly distinct** — Summon and Dismiss buttons get a much darker bg and dimmed text when disabled (revival pending, on cooldown, or not loaded for dismiss).
+- ✅ **Cooldown indicator** — clock-style radial sweep centered on the Summon button while on cooldown (replaces the label entirely). Wedge fills counter-clockwise as the cooldown drains (MOBA convention). Uses whichever cooldown is dominant (per-bond vs. global); revival pending continues to show the "Respawning Xs" label as before. Title-bar global cooldown text uses coarse `Xh Ym` / `Xm Ys` / `Xs` units.
+- ✅ **Reorder rows** — `Move Up` / `Move Down` split-row at the top of the preview pane's action stack. Server-authoritative via `C2SReorderBond(bondId, delta)`; row order is the `BondRoster.bonds` `LinkedHashMap` iteration order, persisted via codec. `sendRosterSync` no longer re-sorts on bondedAt — wire order is the player's chosen order.
 
 ### Pending
 
-- ⬜ **Reorder rows** by drag or up/down buttons. More relevant now that the cap is 10.
 - ⬜ **Search / filter** input at top of roster.
-- ⬜ **Cooldown indicator** — radial sweep over the Summon button while on cooldown (we have text instead today).
 - ⬜ **Last-known-location** display per row — "Overworld · 200,64,-410 · 5m ago" for `loaded=false` rows.
 - ⬜ **Sound packs** — datapack-overridable summon SFX per entity type.
 - ⬜ **Auto-mount toggle per bond** — overrides global `autoMount` config; only meaningful for saddleable bonds.

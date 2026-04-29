@@ -134,12 +134,17 @@ public final class RosterScreen extends Screen {
     private UUID breakArmedBondId = null;
     private long breakArmedExpiresAt = 0L;
 
-    /** Active hold-to-confirm timer for a row's Summon or Dismiss button. Null when no
-     *  button is being held. Mirrors the keybind hold behavior so screen clicks can't
-     *  bypass the hold gate. */
+    /** Active hold-to-confirm timer for a row's Summon, Dismiss, or break Confirm
+     *  button. Null when no button is being held. Mirrors the keybind hold behavior
+     *  so screen clicks can't bypass the hold gate. */
     private RowHold rowHold = null;
 
-    private enum RowHoldAction { SUMMON, DISMISS }
+    private enum RowHoldAction { SUMMON, DISMISS, BREAK }
+
+    /** Hold-to-confirm duration for the break-bond Confirm button. Hardcoded (not
+     *  configurable) — the X-then-Confirm flow is the destructive action's "are you
+     *  sure?" gate, and 1s is enough to prevent slips without feeling sluggish. */
+    private static final long BREAK_CONFIRM_HOLD_MS = 1000L;
 
     private record RowHold(UUID bondId, RowHoldAction action, long startMs, long durationMs) {
         boolean isComplete() {
@@ -431,22 +436,54 @@ public final class RosterScreen extends Screen {
     private void renderFooter(GuiGraphics g, int mouseX, int mouseY) {
         Entity candidate = findClaimCandidate();
         if (candidate != null) {
-            boolean hover = inBox(mouseX, mouseY, claimBtnX, claimBtnY, claimBtnW, CLAIM_BTN_H);
+            int xpCost = Config.BOND_XP_LEVEL_COST.get();
+            int btnY = currentBindBtnY();
+            // Cost preview line above the Bind button (only when bondXpLevelCost > 0).
+            // Soft red when the player can't afford so the visual affordance matches
+            // the server's NOT_ENOUGH_XP rejection — they'll click and see the deny
+            // message, but the red label is the early signal.
+            if (xpCost > 0) {
+                LocalPlayer p = Minecraft.getInstance().player;
+                boolean canAfford = p == null || p.getAbilities().instabuild || p.experienceLevel >= xpCost;
+                int costColor = canAfford ? C_TEXT_MUTED : 0xFFE57878;
+                Component costLabel = Component.translatable("kindred.bind.cost", xpCost);
+                int costY = topPos + panelHeight - FOOTER_H + 1;
+                g.drawCenteredString(font, costLabel, claimBtnX + claimBtnW / 2, costY, costColor);
+            }
+            boolean hover = inBox(mouseX, mouseY, claimBtnX, btnY, claimBtnW, CLAIM_BTN_H);
             String typeName = BuiltInRegistries.ENTITY_TYPE.getKey(candidate.getType()).getPath();
             Component label = Component.translatable("kindred.screen.bind", typeName);
-            drawButton(g, claimBtnX, claimBtnY, claimBtnW, CLAIM_BTN_H, label,
+            drawButton(g, claimBtnX, btnY, claimBtnW, CLAIM_BTN_H, label,
                     hover ? C_BTN_CLAIM_HOVER : C_BTN_CLAIM);
             return;
         }
         // No bindable candidate: show the deny reason if the server gave us one,
         // otherwise the generic "look at a tamed pet" hint. Centered in the rows
-        // column so the preview pane's buttons stay clear.
-        Component message = bindDenyKey.<Component>map(Component::translatable)
+        // column so the preview pane's buttons stay clear. The not-enough-xp key
+        // takes the cost as a positional arg so the player sees the actual amount
+        // ("Requires 10 XP levels to bond") rather than a vague "not enough."
+        Component message = bindDenyKey.map(key ->
+                "kindred.bind.deny.not_enough_xp".equals(key)
+                        ? Component.translatable(key, Config.BOND_XP_LEVEL_COST.get())
+                        : Component.translatable(key))
                 .orElse(Component.translatable("kindred.screen.bind_hint"));
         g.drawCenteredString(font, message,
                 claimBtnX + claimBtnW / 2,
                 claimBtnY + (CLAIM_BTN_H - font.lineHeight) / 2 + 1,
                 C_TEXT_MUTED);
+    }
+
+    /**
+     * Render Y for the Bind button. When {@code bondXpLevelCost > 0}, the button shifts
+     * down inside the footer to make room for a cost preview line above it.
+     * Otherwise it sits at the centered {@link #claimBtnY} position. Used by both
+     * the renderer and the click handler so hit-testing matches the visual.
+     */
+    private int currentBindBtnY() {
+        if (Config.BOND_XP_LEVEL_COST.get() > 0) {
+            return topPos + panelHeight - FOOTER_H + 1 + font.lineHeight + 1;
+        }
+        return claimBtnY;
     }
 
     private Entity findClaimCandidate() {
@@ -534,9 +571,14 @@ public final class RosterScreen extends Screen {
         if (rowHold.action() == RowHoldAction.SUMMON) {
             btnX = summonX;
             btnW = summonW;
-        } else {
+        } else if (rowHold.action() == RowHoldAction.DISMISS) {
             btnX = dismissX;
             btnW = dismissW;
+        } else {
+            // BREAK: confirm button replaces both Dismiss and X while armed,
+            // spanning from dismissX out to the right edge.
+            btnX = dismissX;
+            btnW = rightEdge - dismissX;
         }
 
         if (!inBox(mouseX, mouseY, btnX, btnY, btnW, btnH)) {
@@ -549,10 +591,13 @@ public final class RosterScreen extends Screen {
             UUID bondId = rowHold.bondId();
             RowHoldAction action = rowHold.action();
             rowHold = null;
-            if (action == RowHoldAction.SUMMON) {
-                PacketDistributor.sendToServer(new C2SSummonBond(bondId));
-            } else {
-                PacketDistributor.sendToServer(new C2SDismissBond(bondId));
+            switch (action) {
+                case SUMMON -> PacketDistributor.sendToServer(new C2SSummonBond(bondId));
+                case DISMISS -> PacketDistributor.sendToServer(new C2SDismissBond(bondId));
+                case BREAK -> {
+                    PacketDistributor.sendToServer(new C2SBreakBond(bondId));
+                    breakArmedBondId = null;  // confirm consumed; disarm
+                }
             }
         }
     }
@@ -610,8 +655,13 @@ public final class RosterScreen extends Screen {
         int dismissW = ROW_DISMISS_W;
         int breakSmallW = ROW_BREAK_W;
 
+        // Armed state: TTL gate, OR an in-progress break-confirm hold for this bond
+        // (so the Confirm button doesn't disappear mid-hold if the arm TTL expires).
+        boolean breakHoldActive = rowHold != null
+                && rowHold.bondId().equals(bond.bondId())
+                && rowHold.action() == RowHoldAction.BREAK;
         boolean armed = bond.bondId().equals(breakArmedBondId)
-                && System.currentTimeMillis() < breakArmedExpiresAt;
+                && (System.currentTimeMillis() < breakArmedExpiresAt || breakHoldActive);
 
         boolean summonDisabled = ClientRosterData.isGlobalSummonOnCooldown()
                 || ClientRosterData.isOnCooldown(bond)
@@ -621,10 +671,14 @@ public final class RosterScreen extends Screen {
         // Hold progress (if this row is currently being held for one of these buttons).
         float summonHoldProgress = 0F;
         float dismissHoldProgress = 0F;
+        float breakHoldProgress = 0F;
         if (rowHold != null && rowHold.bondId().equals(bond.bondId())) {
             float p = rowHold.progress();
-            if (rowHold.action() == RowHoldAction.SUMMON) summonHoldProgress = p;
-            else dismissHoldProgress = p;
+            switch (rowHold.action()) {
+                case SUMMON -> summonHoldProgress = p;
+                case DISMISS -> dismissHoldProgress = p;
+                case BREAK -> breakHoldProgress = p;
+            }
         }
 
         int summonColor = summonDisabled
@@ -687,7 +741,8 @@ public final class RosterScreen extends Screen {
             boolean confirmHover = inBox(mx, my, confirmX, btnY, confirmW, btnH);
             drawButton(g, confirmX, btnY, confirmW, btnH,
                     Component.translatable("kindred.screen.break_confirm"),
-                    confirmHover ? C_BTN_BREAK_CONFIRM : C_BTN_BREAK_HOVER);
+                    confirmHover ? C_BTN_BREAK_CONFIRM : C_BTN_BREAK_HOVER,
+                    breakHoldProgress);
         } else {
             // Dismiss only makes sense for an entity that's actually in the world.
             // Revival-pending pets are dead; not-loaded pets are already stored.
@@ -804,7 +859,7 @@ public final class RosterScreen extends Screen {
         int mxAll = (int) mouseX;
         int myAll = (int) mouseY;
 
-        if (inBox(mxAll, myAll, claimBtnX, claimBtnY, claimBtnW, CLAIM_BTN_H)) {
+        if (inBox(mxAll, myAll, claimBtnX, currentBindBtnY(), claimBtnW, CLAIM_BTN_H)) {
             Entity candidate = findClaimCandidate();
             if (candidate != null) {
                 PacketDistributor.sendToServer(new C2SClaimEntity(candidate.getUUID()));
@@ -929,8 +984,10 @@ public final class RosterScreen extends Screen {
                 int confirmX = dismissX;
                 int confirmW = rightEdge - confirmX;
                 if (inBox(mx, my, confirmX, btnY, confirmW, btnH)) {
-                    PacketDistributor.sendToServer(new C2SBreakBond(bond.bondId()));
-                    breakArmedBondId = null;
+                    // Hold-to-confirm — same UX as Summon/Dismiss. Mouse-up before
+                    // the hold completes cancels (handled in mouseReleased).
+                    rowHold = new RowHold(bond.bondId(), RowHoldAction.BREAK,
+                            System.currentTimeMillis(), BREAK_CONFIRM_HOLD_MS);
                     return true;
                 }
             } else {

@@ -133,6 +133,7 @@ public final class ServerPacketHandler {
             case REQUIRES_SADDLEABLE -> "kindred.bind.deny.requires_saddleable";
             case AT_CAPACITY -> "kindred.bind.deny.at_capacity";
             case ALREADY_BONDED -> "kindred.bind.deny.already_bonded";
+            case NOT_ENOUGH_XP -> "kindred.bind.deny.not_enough_xp";
             default -> "kindred.bind.deny.generic";
         };
     }

@@ -43,7 +43,7 @@ logoFile="kindred_logo.png" #optional
 #credits="" #optional
 
 # The authors of the mod, displayed in the mod UI (optional)
-#authors=""
+authors="Silvertide7"
 
 # The description text for the mod (multi line!) (#mandatory)
 description='''
@@ -86,6 +86,13 @@ A full-featured pet bonding and summoning mod.  Call your pets from anywhere, ev
     type="required"
     # This version range declares a minimum of the current minecraft version up to but not including the next major version
     versionRange="${minecraft_version_range}"
+    ordering="NONE"
+    side="BOTH"
+
+[[dependencies.${mod_id}]]
+    modId="pmmo"
+    type="optional"
+    versionRange="[2.7.35,)"
     ordering="NONE"
     side="BOTH"
 

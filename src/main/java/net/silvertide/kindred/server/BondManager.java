@@ -11,10 +11,8 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
-import net.minecraft.core.Holder;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityDimensions;
 import net.minecraft.world.entity.EntityType;
@@ -59,7 +57,8 @@ public final class BondManager {
         BLOCKLISTED,
         REQUIRES_SADDLEABLE,
         AT_CAPACITY,
-        ALREADY_BONDED
+        ALREADY_BONDED,
+        NOT_ENOUGH_XP
     }
 
     public enum BreakResult {
@@ -102,6 +101,14 @@ public final class BondManager {
         BondRoster roster = player.getData(ModAttachments.BOND_ROSTER.get());
         if (roster.size() >= Config.MAX_BONDS.get()) return ClaimResult.AT_CAPACITY;
         if (target.hasData(ModAttachments.BONDED.get())) return ClaimResult.ALREADY_BONDED;
+        // XP gate runs last so the player sees more-specific reasons first (not yours,
+        // blocklisted, etc.) instead of "save up XP" for an entity they could never
+        // bond regardless of level. Creative-mode players bypass: experienceLevel
+        // stays at 0 in creative but XP shouldn't be a barrier when the cost is moot.
+        int xpCost = Config.BOND_XP_LEVEL_COST.get();
+        if (xpCost > 0 && !player.isCreative() && player.experienceLevel < xpCost) {
+            return ClaimResult.NOT_ENOUGH_XP;
+        }
         return ClaimResult.CLAIMED;
     }
 
@@ -149,6 +156,14 @@ public final class BondManager {
         player.setData(ModAttachments.BOND_ROSTER.get(), newRoster);
         target.setData(ModAttachments.BONDED.get(), new Bonded(bondId, player.getUUID(), revision));
         BondIndex.get().track(bondId, target);
+
+        // Charge XP after the attachment writes so a failure mid-claim wouldn't leave
+        // the player out the levels without the bond. Creative-mode skip mirrors the
+        // eligibility gate above. giveExperienceLevels accepts a negative delta.
+        int xpCost = Config.BOND_XP_LEVEL_COST.get();
+        if (xpCost > 0 && !player.isCreative()) {
+            player.giveExperienceLevels(-xpCost);
+        }
 
         Kindred.LOGGER.info("[kindred] {} claimed bond {} on {}", player.getGameProfile().getName(), bondId, typeId);
         return ClaimResult.CLAIMED;
@@ -419,18 +434,18 @@ public final class BondManager {
     }
 
     /**
-     * Plays the summon whistle (and optionally a poof) at the given location.
-     * {@code withParticles} is true on materialize paths (entity appears at the player)
-     * and false on the walk path (entity is already in the world, just being told to come).
+     * Plays the summon FX at the given location. {@code withParticles} is true on
+     * materialize paths (entity appears at the player) and false on the walk path
+     * (entity is already in the world, just being told to come). Mirrors the
+     * dismiss FX shape — single POOF burst — so summon and dismiss feel like
+     * symmetric counterparts. Sound is amethyst chime: gentle, magical, and
+     * distinct from any combat or ambient sound.
      */
     private static void playSummonFx(ServerLevel level, double x, double y, double z, boolean withParticles) {
         if (withParticles) {
             level.sendParticles(ParticleTypes.POOF, x, y + 0.5D, z, 20, 0.3D, 0.3D, 0.3D, 0.05D);
         }
-        // PORTAL_TRIGGER is declared as a raw SoundEvent in vanilla (not a Holder),
-        // so pass it directly to the matching playSound overload.
-        SoundEvent sound = SoundEvents.PORTAL_TRIGGER;
-        level.playSound(null, x, y, z, sound, SoundSource.NEUTRAL, 0.25F, 1.2F);
+        level.playSound(null, x, y, z, SoundEvents.AMETHYST_BLOCK_CHIME, SoundSource.NEUTRAL, 0.5F, 1.0F);
     }
 
     /**

@@ -72,7 +72,7 @@ Nice things that make it feel finished, but you can ship without them.
 Worth doing if you commit to the mod long-term.
 
 - **Custom ownership for non-`OwnableEntity` saddleables** (pigs, striders) — a `SaddleOwner` entity attachment written when first saddled by an unowned player. Unblocks bonding pigs/striders.
-- **XP-level cost to bond.** Config `bondXpCost` (int, default `0` = free). Claiming a bond consumes that many player XP levels. `BondManager.tryClaim` rejects with new `ClaimResult.NOT_ENOUGH_XP` if `player.experienceLevel < cost`; on success calls `player.giveExperienceLevels(-cost)`. Server config syncs to client so the screen's bind footer can preview the cost ("Bind this wolf — 5 levels"). Acts as a balance lever for servers that want bonding to feel earned. Could combine with PMMO integration so bond gates can require either skill levels (PMMO) or vanilla XP (this).
+- ✅ **XP-level cost to bond** — config `bondXpLevelCost` (int, default `0` = free). `checkClaimEligibility` rejects with `ClaimResult.NOT_ENOUGH_XP` when `player.experienceLevel < cost` (creative mode bypasses); `tryClaim` charges via `giveExperienceLevels(-cost)` after the bond writes commit. Screen footer previews the cost above the Bind button as `Cost: X levels`, in soft red when the player can't afford. Could combine with PMMO integration later so bond gates can require either skill levels (PMMO) or vanilla XP (this).
 - **Stable / barn block (optional)** — if you change your mind on "no items/blocks": a block that displays roster pets as live entities. Pure visual; bonds are still the source of truth. Disabled by default.
 - **Equipment persistence** — saddle, armor, chest contents, wolf armor. Already covered if you snapshot full NBT, but explicitly tested as a feature.
 - **Revival cost on permadeath** — when `deathIsPermanent=true`, optionally allow revival by consuming a configurable item (gold/diamond/totem/datapack-defined ingredient list).
@@ -133,8 +133,8 @@ Needed once people deploy this on multiplayer.
 Cheap wins that delight users.
 
 - **Custom summon SFX per pet type** — datapack-defined.
-- **Particle trail on summoned pet** for a few seconds (color configurable per bond).
-- **Recall animation** — pet fades in with smoke or sparkles instead of popping.
+- ❌ **Particle trail on summoned pet** — built and removed; the layered recall burst already gives enough "arrival" presence, and a multi-second trail clutters the screen and reads more like a debuff than a victory beat.
+- ❌ **Recall animation** — tried a layered POOF + END_ROD column + REVERSE_PORTAL burst, reverted to vanilla single POOF for symmetry with the dismiss FX (so summon ↔ dismiss feel like counterparts). Sound switched from `PORTAL_TRIGGER` to `AMETHYST_BLOCK_CHIME` — gentler, more "pet returned" than "ender event."
 - **Pet portrait in screen** — render entity head with `EntityRenderDispatcher` at scale 0.5 in the row.
 - **Achievements / advancements**: bond first pet, fill the roster, summon across all dimensions, summon a pet 1000 times.
 - **Stats command** — total distance traveled with each pet, summons used.

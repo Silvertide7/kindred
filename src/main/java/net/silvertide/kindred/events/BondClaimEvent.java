@@ -12,7 +12,7 @@ import net.neoforged.bus.api.ICancellableEvent;
  *
  * <p>Fires on the server only, after {@code BondService.checkClaimEligibility}
  * has returned {@code CLAIMED}, so listeners can assume the basic gates
- * (ownership, blocklist, capacity, XP, PMMO) already passed. Use this hook for
+ * (ownership, allow/deny, capacity, XP, PMMO) already passed. Use this hook for
  * custom gates: quest progress, party rules, datapack predicates, KubeJS
  * scripts, etc.</p>
  *

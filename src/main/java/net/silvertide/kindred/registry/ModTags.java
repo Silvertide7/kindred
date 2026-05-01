@@ -9,11 +9,19 @@ import net.minecraft.world.level.dimension.DimensionType;
 import net.silvertide.kindred.Kindred;
 
 public final class ModTags {
-    /** Entities in this tag refuse to be bonded. Reads as a property of the entity:
-     *  "this thing can't be bonded" — same shape as vanilla {@code #fire_immune}. */
-    public static final TagKey<EntityType<?>> CANT_BOND = TagKey.create(
+    /** Entities in this tag are the only ones that may be bonded. When the tag is
+     *  non-empty, {@link #BOND_DENYLIST} is ignored and bonding is restricted to
+     *  members of this tag. When empty, the denylist governs. */
+    public static final TagKey<EntityType<?>> BOND_ALLOWLIST = TagKey.create(
             Registries.ENTITY_TYPE,
-            ResourceLocation.fromNamespaceAndPath(Kindred.MODID, "cant_bond")
+            ResourceLocation.fromNamespaceAndPath(Kindred.MODID, "bond_allowlist")
+    );
+
+    /** Entities in this tag refuse to be bonded. Only consulted when
+     *  {@link #BOND_ALLOWLIST} is empty. */
+    public static final TagKey<EntityType<?>> BOND_DENYLIST = TagKey.create(
+            Registries.ENTITY_TYPE,
+            ResourceLocation.fromNamespaceAndPath(Kindred.MODID, "bond_denylist")
     );
 
     /** Dimension types in this tag block summoning while the player is in them.

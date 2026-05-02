@@ -30,7 +30,6 @@ import net.silvertide.kindred.network.packet.C2SRenameBond;
 import net.silvertide.kindred.network.packet.C2SReorderBond;
 import net.silvertide.kindred.network.packet.C2SSetActivePet;
 import net.silvertide.kindred.network.packet.C2SSummonBond;
-import net.silvertide.kindred.registry.ModTags;
 
 import java.util.List;
 import java.util.Optional;
@@ -213,24 +212,18 @@ public final class RosterScreen extends Screen {
         // The button stays hidden until the server confirms eligibility — owner UUID
         // isn't synced to the client for AbstractHorse so we can't validate locally.
         //
-        // Three outcomes here, all driven by composing passesEntityGates +
-        // isAtCapacity:
-        //   1. Aiming at a bindable entity, room to bond → ask the server.
-        //   2. Aiming at a bindable entity but at cap → surface cap deny key.
-        //   3. Not aiming at anything bindable but at cap → surface cap deny key
-        //      anyway so the title bar's "X/Y" isn't unexplained, and LINEAR-mode
-        //      players see "Next bond unlocks at X" without needing a pet in view.
+        // Always round-trip when aiming at a bindable entity: the server is the
+        // source of truth for cap state (PMMO level can change between syncs) and
+        // returns the precise deny reason. The "no candidate but still at cap"
+        // case is handled live in renderFooter from current ClientRosterData, so
+        // it auto-refreshes when this open's roster sync arrives.
         LocalPlayer p = Minecraft.getInstance().player;
         if (p != null) {
             Entity hit = raycastEntity(p);
-            boolean entityBindable = hit != null && passesEntityGates(hit);
-            if (entityBindable && !isAtCapacity()) {
+            if (hit != null && passesEntityGates(hit)) {
                 initialCandidate = hit;
                 bindCandidateConfirmed = Boolean.FALSE;  // pending until server replies
-                bindDenyKey = java.util.Optional.empty();
                 PacketDistributor.sendToServer(new C2SCheckBindCandidate(hit.getUUID()));
-            } else if (entityBindable || isAtCapacity()) {
-                bindDenyKey = java.util.Optional.of(capDenyKey());
             }
         }
 
@@ -463,9 +456,12 @@ public final class RosterScreen extends Screen {
                     hover ? C_BTN_CLAIM_HOVER : C_BTN_CLAIM);
             return;
         }
-        // No bindable candidate: show the deny reason if the server gave us one,
-        // otherwise the generic "look at a tamed pet" hint. Centered in the rows
-        // column so the preview pane's buttons stay clear.
+        // No bindable candidate: show the deny reason if the server gave us one
+        // for the candidate (server is authoritative on per-entity gates), or fall
+        // back to a live cap check from ClientRosterData so "you're maxed out"
+        // surfaces even without a pet in view. Reading ClientRosterData here (not
+        // a cached snapshot) means the message tracks roster syncs that arrive
+        // while the screen is open — e.g. PMMO level-ups raising the cap.
         //
         // Three keys take positional args so the player sees actual numbers
         // instead of vague text:
@@ -476,7 +472,10 @@ public final class RosterScreen extends Screen {
         //                       in PMMO LINEAR mode with room to grow we swap to
         //                       pmmo_next_unlock with the milestone level so the
         //                       player sees the upgrade path
-        Component message = bindDenyKey.map(key -> switch (key) {
+        java.util.Optional<String> effectiveDenyKey = bindDenyKey.isPresent()
+                ? bindDenyKey
+                : (isAtCapacity() ? java.util.Optional.of(capDenyKey()) : java.util.Optional.empty());
+        Component message = effectiveDenyKey.map(key -> switch (key) {
             case "kindred.bind.deny.not_enough_xp" ->
                     Component.translatable(key, Config.BOND_XP_LEVEL_COST.get());
             case "kindred.bind.deny.pmmo_locked" -> Component.translatable(
@@ -555,7 +554,9 @@ public final class RosterScreen extends Screen {
      */
     private static boolean passesEntityGates(Entity e) {
         if (!(e instanceof OwnableEntity)) return false;
-        if (BuiltInRegistries.ENTITY_TYPE.wrapAsHolder(e.getType()).is(ModTags.CANT_BOND)) return false;
+        // Tag checks intentionally omitted: we want the server to respond with
+        // NOT_ALLOWED so the footer can display the precise deny message instead
+        // of silently swallowing the candidate.
         if (Config.REQUIRE_SADDLEABLE.get() && !(e instanceof Saddleable)) return false;
         return true;
     }

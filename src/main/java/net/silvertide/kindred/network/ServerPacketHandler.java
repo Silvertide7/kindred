@@ -141,7 +141,7 @@ public final class ServerPacketHandler {
         return switch (result) {
             case NOT_OWNABLE -> "kindred.bind.deny.not_ownable";
             case NOT_OWNED_BY_PLAYER -> "kindred.bind.deny.not_owned";
-            case BLOCKLISTED -> "kindred.bind.deny.blocklisted";
+            case NOT_ALLOWED -> "kindred.bind.deny.not_allowed";
             case REQUIRES_SADDLEABLE -> "kindred.bind.deny.requires_saddleable";
             case AT_CAPACITY -> "kindred.bind.deny.at_capacity";
             case ALREADY_BONDED -> "kindred.bind.deny.already_bonded";

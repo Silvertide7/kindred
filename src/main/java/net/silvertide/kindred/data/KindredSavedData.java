@@ -12,7 +12,6 @@ import net.silvertide.kindred.Kindred;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Optional;
@@ -104,12 +103,11 @@ public class KindredSavedData extends SavedData {
     }
 
     public void clearBond(UUID bondId) {
-        boolean changed = false;
-        if (revisionByBondId.remove(bondId) != null) changed = true;
-        if (pendingDisbands.remove(bondId)) changed = true;
-        if (killedWhileOffline.remove(bondId)) changed = true;
-        if (offlineSnapshots.remove(bondId) != null) changed = true;
-        if (changed) setDirty();
+        revisionByBondId.remove(bondId);
+        pendingDisbands.remove(bondId);
+        killedWhileOffline.remove(bondId);
+        offlineSnapshots.remove(bondId);
+        setDirty();
     }
 
     public void markPendingDisband(UUID bondId) {

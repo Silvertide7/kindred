@@ -10,6 +10,7 @@ import net.neoforged.neoforge.event.entity.living.LivingDamageEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
+import net.silvertide.kindred.bond.BondEntityIndex;
 import net.silvertide.kindred.config.Config;
 import net.silvertide.kindred.network.packet.S2CCancelHold;
 import net.silvertide.kindred.Kindred;
@@ -17,7 +18,6 @@ import net.silvertide.kindred.attachment.Bond;
 import net.silvertide.kindred.attachment.BondRoster;
 import net.silvertide.kindred.registry.ModAttachments;
 import net.silvertide.kindred.network.ServerPacketHandler;
-import net.silvertide.kindred.bond.BondIndex;
 import net.silvertide.kindred.data.OfflineSnapshot;
 import net.silvertide.kindred.data.KindredSavedData;
 
@@ -86,7 +86,7 @@ public final class PlayerEvents {
         for (ServerPlayer player : event.getServer().getPlayerList().getPlayers()) {
             flushLoadedSnapshots(player);
         }
-        BondIndex.get().clear();
+        BondEntityIndex.get().clear();
     }
 
     /**
@@ -100,7 +100,7 @@ public final class PlayerEvents {
 
         BondRoster updated = roster;
         for (UUID bondId : roster.bonds().keySet()) {
-            Optional<Entity> entity = BondIndex.get().find(bondId);
+            Optional<Entity> entity = BondEntityIndex.get().find(bondId);
             if (entity.isEmpty()) continue;
 
             Entity e = entity.get();

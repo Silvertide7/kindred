@@ -19,9 +19,9 @@ import net.silvertide.kindred.Kindred;
 import net.silvertide.kindred.attachment.Bond;
 import net.silvertide.kindred.attachment.BondRoster;
 import net.silvertide.kindred.attachment.Bonded;
+import net.silvertide.kindred.bond.BondEntityIndex;
 import net.silvertide.kindred.config.Config;
 import net.silvertide.kindred.registry.ModAttachments;
-import net.silvertide.kindred.bond.BondIndex;
 import net.silvertide.kindred.bond.BondService;
 import net.silvertide.kindred.data.OfflineSnapshot;
 import net.silvertide.kindred.data.KindredSavedData;
@@ -59,7 +59,7 @@ public final class EntityEvents {
             return;
         }
 
-        BondIndex.get().track(bonded.bondId(), entity);
+        BondEntityIndex.get().track(bonded.bondId(), entity);
     }
 
     @SubscribeEvent
@@ -69,7 +69,7 @@ public final class EntityEvents {
         if (!entity.hasData(ModAttachments.BONDED.get())) return;
 
         Bonded bonded = entity.getData(ModAttachments.BONDED.get());
-        BondIndex.get().untrack(bonded.bondId(), entity);
+        BondEntityIndex.get().untrack(bonded.bondId(), entity);
 
         snapshotEntity(level, entity, bonded);
     }

@@ -31,6 +31,10 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.common.NeoForge;
 import net.silvertide.kindred.Kindred;
+import net.silvertide.kindred.bond.bond_results.BreakResult;
+import net.silvertide.kindred.bond.bond_results.ClaimResult;
+import net.silvertide.kindred.bond.bond_results.DismissResult;
+import net.silvertide.kindred.bond.bond_results.SummonResult;
 import net.silvertide.kindred.events.BondClaimEvent;
 import net.silvertide.kindred.attachment.Bond;
 import net.silvertide.kindred.attachment.BondRoster;
@@ -48,54 +52,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-/**
- * Server-side claim / break / summon logic.
- *
- * Pure stateless logic — operates on attachments, world SavedData, and BondIndex.
- * Event wiring (snapshot triggers, revision-cancel on join, offline drain) lives in
- * separate event handlers (not yet implemented).
- */
 public final class BondService {
-
-    public enum ClaimResult {
-        CLAIMED,
-        NOT_OWNABLE,
-        NOT_OWNED_BY_PLAYER,
-        NOT_ALLOWED,
-        REQUIRES_SADDLEABLE,
-        AT_CAPACITY,
-        ALREADY_BONDED,
-        NOT_ENOUGH_XP,
-        PMMO_LOCKED,
-        CANCELLED
-    }
-
-    public enum BreakResult {
-        BROKEN,
-        NO_SUCH_BOND
-    }
-
-    public enum DismissResult {
-        DISMISSED,
-        NO_SUCH_BOND,
-        NOT_LOADED
-    }
-
-    public enum SummonResult {
-        WALKING,
-        TELEPORTED_NEAR,
-        SUMMONED_FRESH,
-        NO_SUCH_BOND,
-        ON_COOLDOWN,
-        GLOBAL_COOLDOWN,
-        REVIVAL_PENDING,
-        NO_SPACE,
-        PLAYER_AIRBORNE,
-        CROSS_DIM_BLOCKED,
-        BANNED_DIMENSION,
-        BANNED_BIOME,
-        SPAWN_FAILED
-    }
 
     /**
      * Effective bond cap for a player. Without PMMO active, this is just the
@@ -132,6 +89,7 @@ public final class BondService {
     public static ClaimResult checkClaimEligibility(ServerPlayer player, Entity target) {
         if (!(target instanceof OwnableEntity owned)) return ClaimResult.NOT_OWNABLE;
         if (!player.getUUID().equals(owned.getOwnerUUID())) return ClaimResult.NOT_OWNED_BY_PLAYER;
+
         var typeHolder = BuiltInRegistries.ENTITY_TYPE.wrapAsHolder(target.getType());
         boolean allowlistActive = BuiltInRegistries.ENTITY_TYPE.getTag(ModTags.BOND_ALLOWLIST)
                 .map(t -> t.size() > 0).orElse(false);
@@ -142,6 +100,7 @@ public final class BondService {
         }
         if (Config.REQUIRE_SADDLEABLE.get() && !(target instanceof Saddleable)) return ClaimResult.REQUIRES_SADDLEABLE;
         BondRoster roster = player.getData(ModAttachments.BOND_ROSTER.get());
+
         // PMMO gate: when active, the player's effective cap depends on their skill
         // level. Cap of 0 means below the start level entirely (PMMO_LOCKED). Hitting
         // the cap with bonds already filled reuses AT_CAPACITY — message-wise that
@@ -151,6 +110,7 @@ public final class BondService {
         if (effectiveCap == 0) return ClaimResult.PMMO_LOCKED;
         if (roster.size() >= effectiveCap) return ClaimResult.AT_CAPACITY;
         if (target.hasData(ModAttachments.BONDED.get())) return ClaimResult.ALREADY_BONDED;
+
         // XP gate runs last so the player sees more-specific reasons first (not yours,
         // not-allowed, etc.) instead of "save up XP" for an entity they could never
         // bond regardless of level. Creative-mode players bypass: experienceLevel
@@ -159,6 +119,7 @@ public final class BondService {
         if (xpCost > 0 && !player.isCreative() && player.experienceLevel < xpCost) {
             return ClaimResult.NOT_ENOUGH_XP;
         }
+
         return ClaimResult.CLAIMED;
     }
 
@@ -211,7 +172,7 @@ public final class BondService {
         }
         player.setData(ModAttachments.BOND_ROSTER.get(), newRoster);
         target.setData(ModAttachments.BONDED.get(), new Bonded(bondId, player.getUUID(), revision));
-        BondIndex.get().track(bondId, target);
+        BondEntityIndex.get().track(bondId, target);
 
         // Charge XP after the attachment writes so a failure mid-claim wouldn't leave
         // the player out the levels without the bond. Creative-mode skip mirrors the
@@ -238,10 +199,10 @@ public final class BondService {
         // in an unloaded chunk somewhere — at the player's home base, say — leave them
         // where they are; teleporting to a player who's about to break the bond could
         // strand them in a dangerous spot with no way to recall.
-        Optional<Entity> existing = BondIndex.get().find(bondId);
+        Optional<Entity> existing = BondEntityIndex.get().find(bondId);
         if (existing.isEmpty() && maybeBond.get().dismissed()) {
             materializeFresh(player, maybeBond.get(), level, saved);
-            existing = BondIndex.get().find(bondId);
+            existing = BondEntityIndex.get().find(bondId);
         }
 
         // Re-read roster — materializeFresh updates the bond's revision/timestamps
@@ -252,7 +213,7 @@ public final class BondService {
         if (existing.isPresent()) {
             Entity entity = existing.get();
             entity.removeData(ModAttachments.BONDED.get());
-            BondIndex.get().untrack(bondId);
+            BondEntityIndex.get().untrack(bondId);
             saved.clearBond(bondId);
         } else {
             // Entity not loaded and materialize failed — wipe what we can, and queue
@@ -280,7 +241,7 @@ public final class BondService {
         Optional<Bond> bondOpt = roster.get(bondId);
         if (bondOpt.isEmpty()) return DismissResult.NO_SUCH_BOND;
 
-        Optional<Entity> existing = BondIndex.get().find(bondId);
+        Optional<Entity> existing = BondEntityIndex.get().find(bondId);
         if (existing.isEmpty()) return DismissResult.NOT_LOADED;
         Entity entity = existing.get();
 
@@ -309,7 +270,7 @@ public final class BondService {
                 SoundEvents.ENDERMAN_TELEPORT, SoundSource.NEUTRAL, 0.3F, 1.2F);
 
         // discard() synchronously fires EntityLeaveLevelEvent, which our handler uses
-        // to snapshot the bond and untrack from BondIndex. No need to repeat that here.
+        // to snapshot the bond and untrack from BondEntityIndex. No need to repeat that here.
         entity.discard();
 
         Kindred.LOGGER.info("[kindred] {} dismissed bond {}", player.getGameProfile().getName(), bondId);
@@ -358,7 +319,7 @@ public final class BondService {
             return SummonResult.BANNED_BIOME;
         }
 
-        Optional<Entity> existing = BondIndex.get().find(bondId);
+        Optional<Entity> existing = BondEntityIndex.get().find(bondId);
         if (existing.isPresent()) {
             Entity old = existing.get();
             ResourceKey<Level> oldDim = old.level().dimension();
@@ -377,14 +338,17 @@ public final class BondService {
                     GlobalSummonCooldownTracker.get().recordSummon(player.getUUID());
                     return SummonResult.WALKING;
                 }
-                // Same dim but far. Route through Entity.changeDimension — vanilla's
-                // own teleport path. For same-dim it short-circuits to a moveTo on the
-                // existing instance (no NBT round-trip), so any mod-attached state
-                // travels along untouched.
-                return teleportLoaded(player, old, bond, playerLevel, saved, SummonResult.TELEPORTED_NEAR);
+                // Same dim but far. Use Entity.teleportTo — lightweight (no
+                // DimensionTransition machinery, no NBT round-trip) and crucially
+                // does NOT route through Entity.changeDimension. Some mods
+                // (e.g. Touhou Little Maid) override changeDimension destructively,
+                // ignoring the destination and random-teleporting within the dim;
+                // teleportTo bypasses those overrides.
+                return teleportSameDim(player, old, bond, playerLevel, saved);
             }
 
-            // Cross-dim
+            // Cross-dim — must use changeDimension; teleportTo's cross-dim overload
+            // wraps it anyway, and we want EntityTravelToDimensionEvent to fire.
             if (!Config.CROSS_DIM_ALLOWED.get()) return SummonResult.CROSS_DIM_BLOCKED;
             return teleportLoaded(player, old, bond, playerLevel, saved, SummonResult.SUMMONED_FRESH);
         }
@@ -394,13 +358,54 @@ public final class BondService {
     }
 
     /**
-     * Move a currently-loaded bonded entity to the player using vanilla's
-     * {@link Entity#changeDimension}. Same-dim short-circuits to a {@code moveTo} on
-     * the existing instance (no NBT round-trip); cross-dim creates a new instance via
-     * {@code restoreFrom} and routes through {@code addDuringTeleport}. Both paths
-     * preserve mod-side state better than a discard+recreate would, and the cross-dim
-     * path fires {@code EntityTravelToDimensionEvent} so any mod gating on that
-     * event (e.g. anti-cheat or pet-defense baubles) sees this as a legitimate
+     * Same-dim teleport via {@link Entity#teleportTo(double, double, double)}. No
+     * dimension-transition machinery, no NBT round-trip — just moves the existing
+     * instance and syncs to clients. Deliberately does NOT call
+     * {@link Entity#changeDimension}: some mods override that destructively
+     * (Touhou Little Maid's override ignores the target and random-teleports
+     * within the current dimension, returning null), and going around it lets
+     * those pets summon correctly.
+     *
+     * <p>Revision bump guards against an unclean shutdown between this call and
+     * the next chunk save leaving an old-position copy on disk that would slip
+     * past the join-event anti-dupe check on reload.</p>
+     */
+    private static SummonResult teleportSameDim(ServerPlayer player, Entity old, Bond bond, ServerLevel level, KindredSavedData saved) {
+        UUID bondId = bond.bondId();
+
+        Optional<Vec3> found = findSpawnLocation(level, player, old.getType().getDimensions());
+        if (found.isEmpty() && Config.REQUIRE_SPACE.get()) return SummonResult.NO_SPACE;
+        Vec3 spawnPos = found.orElse(player.position());
+
+        wake(old);
+        old.setYRot(player.getYRot());
+        old.teleportTo(spawnPos.x, spawnPos.y, spawnPos.z);
+
+        // This probably isn't necessary, but in the case that a chunk crashes while the tp is happening this will guarantee de-duping the entity.
+        int newRevision = saved.incrementRevision(bondId);
+        old.setData(ModAttachments.BONDED.get(), old.getData(ModAttachments.BONDED.get()).withRevision(newRevision));
+
+        playSummonFx(level, spawnPos.x, spawnPos.y, spawnPos.z, true);
+
+        BondRoster currentRoster = player.getData(ModAttachments.BOND_ROSTER.get());
+        Optional<Bond> currentBond = currentRoster.get(bondId);
+        if (currentBond.isPresent()) {
+            Bond updated = currentBond.get()
+                    .withRevision(newRevision)
+                    .withLastSummonedAt(System.currentTimeMillis());
+            player.setData(ModAttachments.BOND_ROSTER.get(), currentRoster.with(updated));
+        }
+
+        GlobalSummonCooldownTracker.get().recordSummon(player.getUUID());
+        return SummonResult.TELEPORTED_NEAR;
+    }
+
+    /**
+     * Cross-dim teleport via {@link Entity#changeDimension}. Creates a new instance
+     * via {@code restoreFrom} and routes through {@code addDuringTeleport},
+     * preserving mod-side state better than discard+recreate would, and fires
+     * {@code EntityTravelToDimensionEvent} so any mod gating on that event
+     * (e.g. anti-cheat or pet-defense baubles) sees this as a legitimate
      * dimension transfer instead of an external entity swap.
      *
      * <p>Revision is bumped after a successful teleport, and the new revision is
@@ -424,8 +429,8 @@ public final class BondService {
             spawnPos = player.position();
         }
 
-        // Stand sitting pets up before the teleport so the new (cross-dim) or same
-        // (same-dim) instance starts standing. Mirrors materializeFresh ordering.
+        // Stand sitting pets up so the cross-dim instance starts standing. Mirrors
+        // materializeFresh ordering.
         wake(old);
 
         DimensionTransition transition = new DimensionTransition(
@@ -463,7 +468,7 @@ public final class BondService {
         // the source chunk (e.g. surviving an unclean shutdown between the teleport
         // and the next chunk save) is rejected by the anti-dupe gate on reload.
         int newRevision = saved.incrementRevision(bondId);
-        teleported.setData(ModAttachments.BONDED.get(), new Bonded(bondId, player.getUUID(), newRevision));
+        teleported.setData(ModAttachments.BONDED.get(), teleported.getData(ModAttachments.BONDED.get()).withRevision(newRevision));
 
         playSummonFx(targetLevel, spawnPos.x, spawnPos.y, spawnPos.z, true);
 
@@ -541,7 +546,7 @@ public final class BondService {
         entity.setData(ModAttachments.BONDED.get(), new Bonded(bond.bondId(), player.getUUID(), newRevision));
 
         // addFreshEntity fires EntityJoinLevelEvent, which our handler responds to by tracking
-        // in BondIndex. No explicit track needed here.
+        // in BondEntityIndex. No explicit track needed here.
         if (!targetLevel.addFreshEntity(entity)) {
             // Rejected by the level — chunk system, world border, another mod's
             // EntityJoinLevelEvent listener cancelled it, etc.
@@ -650,18 +655,6 @@ public final class BondService {
         return false;
     }
 
-    /**
-     * Search a 5x5 (x/z) footprint around the player for a spot where the entity can
-     * stand without overlapping any block. Candidates are sorted by a combined
-     * distance + facing-direction score so the pet prefers landing on flat ground in
-     * front of the player. The player's own tile (dx=0, dz=0) is the last resort —
-     * we'd rather have the pet beside or in front of the player than on top of them.
-     *
-     * Each column tries 1 block above the player's feet (handles a single-block step
-     * up in front), the player's level, and up to 3 below (handles step-downs and
-     * overhangs). "Floor must be sturdy" + "pocket must be free of collisions" are
-     * the only structural checks — dropoffs adjacent to the spot are fine.
-     */
     private static Optional<Vec3> findSpawnLocation(ServerLevel level, ServerPlayer player, EntityDimensions dims) {
         BlockPos pp = player.blockPosition();
 
@@ -671,34 +664,32 @@ public final class BondService {
         double fx = -Math.sin(yawRad);
         double fz = Math.cos(yawRad);
 
-        record Candidate(int dx, int dz, double score) {}
-        List<Candidate> ranked = new ArrayList<>(24);
+        record SpawnLocationCandidate(int dx, int dz, double score) {}
+        List<SpawnLocationCandidate> ranked = new ArrayList<>(24);
+
+        // Loop through all nearby blocks and calculate a score for that position, based on the direction the player is looking.
         for (int dx = -2; dx <= 2; dx++) {
             for (int dz = -2; dz <= 2; dz++) {
-                if (dx == 0 && dz == 0) continue; // on-player handled as last resort
-                double forwardness = dx * fx + dz * fz;       // + in front, - behind
-                double lateral = Math.abs(dx * fz - dz * fx); // perpendicular distance
+                if (dx == 0 && dz == 0) continue;
+                double forwardness = dx * fx + dz * fz;
+                double lateral = Math.abs(dx * fz - dz * fx);
                 double dist = Math.sqrt(dx * dx + dz * dz);
-                // Higher = better. Forwardness dominates direction (front >> behind),
-                // lateral lightly penalizes off-axis spots so direct-front beats the
-                // diagonal corners, and the small +dist nudge breaks ties toward
-                // landing a couple blocks out instead of right next to the player.
-                ranked.add(new Candidate(dx, dz, forwardness - 0.2 * lateral + 0.05 * dist));
+                ranked.add(new SpawnLocationCandidate(dx, dz, forwardness - 0.2 * lateral + 0.05 * dist));
             }
         }
-        ranked.sort(Comparator.comparingDouble(Candidate::score).reversed());
+        ranked.sort(Comparator.comparingDouble(SpawnLocationCandidate::score).reversed());
 
         // Two-pass: prefer dry footprints across the entire 5x5 area before settling
         // for a wet one. A pet shouldn't materialize in the pond when there's a
         // patch of grass two tiles further from the player.
-        for (Candidate c : ranked) {
-            Optional<Vec3> spot = tryColumn(level, pp.offset(c.dx, 0, c.dz), dims, false);
+        for (SpawnLocationCandidate candidate : ranked) {
+            Optional<Vec3> spot = tryColumn(level, pp.offset(candidate.dx, 0, candidate.dz), dims, false);
             if (spot.isPresent()) return spot;
         }
         Optional<Vec3> dryOnPlayer = tryColumn(level, pp, dims, false);
         if (dryOnPlayer.isPresent()) return dryOnPlayer;
 
-        for (Candidate c : ranked) {
+        for (SpawnLocationCandidate c : ranked) {
             Optional<Vec3> spot = tryColumn(level, pp.offset(c.dx, 0, c.dz), dims, true);
             if (spot.isPresent()) return spot;
         }

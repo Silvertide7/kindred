@@ -22,6 +22,10 @@ import net.silvertide.kindred.Kindred;
 import net.silvertide.kindred.attachment.Bond;
 import net.silvertide.kindred.attachment.BondRoster;
 import net.silvertide.kindred.bond.BondService;
+import net.silvertide.kindred.bond.bond_results.BreakResult;
+import net.silvertide.kindred.bond.bond_results.ClaimResult;
+import net.silvertide.kindred.bond.bond_results.DismissResult;
+import net.silvertide.kindred.bond.bond_results.SummonResult;
 import net.silvertide.kindred.registry.ModAttachments;
 
 import java.util.Comparator;
@@ -29,18 +33,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-/**
- * Debug commands for exercising the bond system without a GUI.
- *
- *   /kindred claim                  — claim the entity at your crosshair (within 10 blocks)
- *   /kindred list                   — list your bonds with stable indices
- *   /kindred summon  &lt;index&gt;       — summon the bond at the given index
- *   /kindred dismiss &lt;index&gt;       — recall a loaded bond back to storage
- *   /kindred break   &lt;index&gt;       — break the bond at the given index
- *   /kindred active  &lt;index|none&gt;  — set or clear the active pet
- *
- * Indices are derived from your roster sorted by bondedAt (oldest first).
- */
 @EventBusSubscriber(modid = Kindred.MODID)
 public final class KindredCommand {
 
@@ -73,9 +65,9 @@ public final class KindredCommand {
             ctx.getSource().sendFailure(Component.literal("No entity in your line of sight."));
             return 0;
         }
-        BondService.ClaimResult result = BondService.tryClaim(player, target);
+        ClaimResult result = BondService.tryClaim(player, target);
         ctx.getSource().sendSuccess(() -> Component.literal("Claim " + describeEntityType(target) + ": " + result.name()), false);
-        return result == BondService.ClaimResult.CLAIMED ? 1 : 0;
+        return result == ClaimResult.CLAIMED ? 1 : 0;
     }
 
     private static int runList(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
@@ -111,11 +103,11 @@ public final class KindredCommand {
             ctx.getSource().sendFailure(Component.literal("No bond at index " + index + "."));
             return 0;
         }
-        BondService.SummonResult result = BondService.summon(player, bond.bondId());
+        SummonResult result = BondService.summon(player, bond.bondId());
         ctx.getSource().sendSuccess(() -> Component.literal("Summon [" + index + "] " + shortId(bond.bondId()) + ": " + result.name()), false);
-        return result == BondService.SummonResult.WALKING
-                || result == BondService.SummonResult.TELEPORTED_NEAR
-                || result == BondService.SummonResult.SUMMONED_FRESH ? 1 : 0;
+        return result == SummonResult.WALKING
+                || result == SummonResult.TELEPORTED_NEAR
+                || result == SummonResult.SUMMONED_FRESH ? 1 : 0;
     }
 
     private static int runBreak(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
@@ -126,9 +118,9 @@ public final class KindredCommand {
             ctx.getSource().sendFailure(Component.literal("No bond at index " + index + "."));
             return 0;
         }
-        BondService.BreakResult result = BondService.breakBond(player, bond.bondId());
+        BreakResult result = BondService.breakBond(player, bond.bondId());
         ctx.getSource().sendSuccess(() -> Component.literal("Break [" + index + "] " + shortId(bond.bondId()) + ": " + result.name()), false);
-        return result == BondService.BreakResult.BROKEN ? 1 : 0;
+        return result == BreakResult.BROKEN ? 1 : 0;
     }
 
     private static int runDismiss(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
@@ -139,9 +131,9 @@ public final class KindredCommand {
             ctx.getSource().sendFailure(Component.literal("No bond at index " + index + "."));
             return 0;
         }
-        BondService.DismissResult result = BondService.dismiss(player, bond.bondId());
+        DismissResult result = BondService.dismiss(player, bond.bondId());
         ctx.getSource().sendSuccess(() -> Component.literal("Dismiss [" + index + "] " + shortId(bond.bondId()) + ": " + result.name()), false);
-        return result == BondService.DismissResult.DISMISSED ? 1 : 0;
+        return result == DismissResult.DISMISSED ? 1 : 0;
     }
 
     private static int runActive(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {

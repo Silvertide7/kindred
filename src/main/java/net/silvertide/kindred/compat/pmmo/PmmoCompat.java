@@ -4,15 +4,6 @@ import net.minecraft.world.entity.player.Player;
 import net.neoforged.fml.ModList;
 import net.silvertide.kindred.Kindred;
 
-/**
- * Public entry point for PMMO interaction. Contains zero direct PMMO references
- * so it's always loadable. The {@link PmmoBridge} implementation is resolved at
- * static-init time via {@link Class#forName}; if PMMO isn't installed the
- * bridge stays null and every call short-circuits.
- *
- * <p>Always check {@link #isAvailable()} before reading levels — gameplay code
- * should treat unavailable as "PMMO is off, ignore the gate," not as "level 0."</p>
- */
 public final class PmmoCompat {
     private static final PmmoBridge BRIDGE;
 

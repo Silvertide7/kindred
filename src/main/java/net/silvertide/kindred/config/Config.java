@@ -5,15 +5,8 @@ import net.silvertide.kindred.compat.pmmo.PmmoMode;
 
 public final class Config {
     private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
+    private Config() {}
 
-    // Each group is bracketed by static initializer blocks calling push/pop on the
-    // builder. Java executes static blocks and static-field initializers in textual
-    // order (JLS 12.4.2), so the field initializers below land inside the active
-    // category. Entries after the first in each section get a leading "" comment
-    // line to give the generated TOML a bare "#" between configs — the closest we
-    // can get to visual separation without writing the TOML by hand.
-
-    // ───── Bonding & roster ─────
     static { BUILDER.push("bonding"); }
 
     public static final ModConfigSpec.IntValue MAX_BONDS = BUILDER
@@ -35,7 +28,6 @@ public final class Config {
 
     static { BUILDER.pop(); }
 
-    // ───── Summoning behavior ─────
     static { BUILDER.push("summoning"); }
 
     public static final ModConfigSpec.DoubleValue WALK_RANGE = BUILDER
@@ -68,7 +60,6 @@ public final class Config {
 
     static { BUILDER.pop(); }
 
-    // ───── Cooldowns ─────
     static { BUILDER.push("cooldowns"); }
 
     public static final ModConfigSpec.IntValue SUMMON_COOLDOWN_TICKS = BUILDER
@@ -83,7 +74,6 @@ public final class Config {
 
     static { BUILDER.pop(); }
 
-    // ───── Death & revival ─────
     static { BUILDER.push("death"); }
 
     public static final ModConfigSpec.BooleanValue DEATH_IS_PERMANENT = BUILDER
@@ -109,7 +99,6 @@ public final class Config {
 
     static { BUILDER.pop(); }
 
-    // ───── Input (hold-to-confirm) ─────
     static { BUILDER.push("input"); }
 
     public static final ModConfigSpec.DoubleValue HOLD_TO_SUMMON_SECONDS = BUILDER
@@ -128,7 +117,6 @@ public final class Config {
 
     static { BUILDER.pop(); }
 
-    // ───── PMMO compat (Project MMO) ─────
     static { BUILDER.push("pmmo"); }
 
     public static final ModConfigSpec.BooleanValue PMMO_ENABLED = BUILDER
@@ -163,8 +151,6 @@ public final class Config {
 
     public static final ModConfigSpec SPEC = BUILDER.build();
 
-    // ───── ms helpers ─────
-    // Internal code wants milliseconds for time math; configs are in seconds for users.
 
     public static long holdToDismissMs() {
         return Math.round(HOLD_TO_DISMISS_SECONDS.get() * 1000.0D);
@@ -182,5 +168,4 @@ public final class Config {
         return REVIVAL_COOLDOWN_SECONDS.get() * 1000L;
     }
 
-    private Config() {}
 }

@@ -7,8 +7,6 @@ import net.minecraft.core.UUIDUtil;
 import java.util.UUID;
 
 public record Bonded(UUID bondId, UUID ownerUUID, int revision) {
-    // Sentinel returned by AttachmentType's default supplier when an entity has no Bonded data.
-    // Callers must check entity.hasData(...) before treating data as real.
     public static final Bonded EMPTY = new Bonded(new UUID(0L, 0L), new UUID(0L, 0L), 0);
 
     public static final Codec<Bonded> CODEC = RecordCodecBuilder.create(instance -> instance.group(

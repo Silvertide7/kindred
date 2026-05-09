@@ -9,8 +9,11 @@ import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import net.silvertide.kindred.attachment.Bond;
 import net.silvertide.kindred.attachment.BondRoster;
+import net.silvertide.kindred.bond.bond_results.ClaimResult;
+import net.silvertide.kindred.bond.bond_results.DismissResult;
+import net.silvertide.kindred.bond.bond_results.SummonResult;
 import net.silvertide.kindred.config.Config;
-import net.silvertide.kindred.bond.BondIndex;
+import net.silvertide.kindred.bond.BondEntityIndex;
 import net.silvertide.kindred.network.packet.C2SBreakBond;
 import net.silvertide.kindred.network.packet.C2SCheckBindCandidate;
 import net.silvertide.kindred.network.packet.C2SClaimEntity;
@@ -58,7 +61,7 @@ public final class ServerPacketHandler {
                 player.sendSystemMessage(Component.translatable("kindred.summon.no_active"));
                 return;
             }
-            BondService.SummonResult result = BondService.summon(player, activeId.get());
+            SummonResult result = BondService.summon(player, activeId.get());
             messageForSummonResult(result).ifPresent(player::sendSystemMessage);
             if (isSummonSuccess(result)) sendRosterSync(player);
         });
@@ -67,7 +70,7 @@ public final class ServerPacketHandler {
     public static void onSummonBond(C2SSummonBond payload, IPayloadContext context) {
         context.enqueueWork(() -> {
             if (!(context.player() instanceof ServerPlayer player)) return;
-            BondService.SummonResult result = BondService.summon(player, payload.bondId());
+            SummonResult result = BondService.summon(player, payload.bondId());
             messageForSummonResult(result).ifPresent(player::sendSystemMessage);
             if (isSummonSuccess(result)) sendRosterSync(player);
         });
@@ -81,7 +84,7 @@ public final class ServerPacketHandler {
      * client-side validation, the second is a technical fault that the player
      * can't act on. The remaining states each map to a translatable reason.
      */
-    private static Optional<Component> messageForSummonResult(BondService.SummonResult result) {
+    private static Optional<Component> messageForSummonResult(SummonResult result) {
         String key = switch (result) {
             case BANNED_DIMENSION -> "kindred.summon.banned_dimension";
             case BANNED_BIOME -> "kindred.summon.banned_biome";
@@ -112,8 +115,8 @@ public final class ServerPacketHandler {
             if (!(context.player() instanceof ServerPlayer player)) return;
             // Same shape as break — dismiss success/failure is reflected in the
             // roster sync (entity discard + bond.dismissed flag), no chat needed.
-            BondService.DismissResult result = BondService.dismiss(player, payload.bondId());
-            if (result == BondService.DismissResult.DISMISSED) sendRosterSync(player);
+            DismissResult result = BondService.dismiss(player, payload.bondId());
+            if (result == DismissResult.DISMISSED) sendRosterSync(player);
         });
     }
 
@@ -129,15 +132,15 @@ public final class ServerPacketHandler {
                         payload.entityUUID(), false, Optional.empty()));
                 return;
             }
-            BondService.ClaimResult result = BondService.checkClaimEligibility(player, target);
-            boolean canBind = result == BondService.ClaimResult.CLAIMED;
+            ClaimResult result = BondService.checkClaimEligibility(player, target);
+            boolean canBind = result == ClaimResult.CLAIMED;
             Optional<String> denyKey = canBind ? Optional.empty() : Optional.of(denyKeyFor(result));
             PacketDistributor.sendToPlayer(player, new S2CBindCandidateResult(
                     payload.entityUUID(), canBind, denyKey));
         });
     }
 
-    private static String denyKeyFor(BondService.ClaimResult result) {
+    private static String denyKeyFor(ClaimResult result) {
         return switch (result) {
             case NOT_OWNABLE -> "kindred.bind.deny.not_ownable";
             case NOT_OWNED_BY_PLAYER -> "kindred.bind.deny.not_owned";
@@ -164,8 +167,8 @@ public final class ServerPacketHandler {
                 // or unloaded between confirm and click; nothing actionable.
                 return;
             }
-            BondService.ClaimResult result = BondService.tryClaim(player, target);
-            if (result == BondService.ClaimResult.CLAIMED) {
+            ClaimResult result = BondService.tryClaim(player, target);
+            if (result == ClaimResult.CLAIMED) {
                 player.sendSystemMessage(Component.translatable(
                         "kindred.bind.success", target.getType().getDescription()));
                 sendRosterSync(player);
@@ -179,7 +182,7 @@ public final class ServerPacketHandler {
         });
     }
 
-    private static Component claimDenyMessage(BondService.ClaimResult result) {
+    private static Component claimDenyMessage(ClaimResult result) {
         String key = denyKeyFor(result);
         return switch (result) {
             case NOT_ENOUGH_XP ->
@@ -207,7 +210,7 @@ public final class ServerPacketHandler {
             player.setData(ModAttachments.BOND_ROSTER.get(), roster.with(updated));
             // Mirror the rename onto the live entity so the in-world nametag updates
             // immediately. Offline pets pick this up on next materialize from displayName.
-            BondIndex.get().find(payload.bondId())
+            BondEntityIndex.get().find(payload.bondId())
                     .ifPresent(e -> BondService.applyDisplayName(e, sanitized));
             sendRosterSync(player);
         });
@@ -260,7 +263,7 @@ public final class ServerPacketHandler {
                     if (revivalCooldownMs > 0L && b.diedAt().isPresent()) {
                         revivalRemaining = Math.max(0L, revivalCooldownMs - (now - b.diedAt().get()));
                     }
-                    Optional<Entity> live = BondIndex.get().find(b.bondId());
+                    Optional<Entity> live = BondEntityIndex.get().find(b.bondId());
                     boolean loaded = live.isPresent();
                     // Capture live NBT for loaded pets so saddle/armor/equipment changes
                     // made in-world flow into the preview without waiting for the pet
@@ -277,10 +280,10 @@ public final class ServerPacketHandler {
         PacketDistributor.sendToPlayer(player, new S2CRosterSync(views, globalRemaining, effectiveCap));
     }
 
-    private static boolean isSummonSuccess(BondService.SummonResult result) {
-        return result == BondService.SummonResult.WALKING
-                || result == BondService.SummonResult.TELEPORTED_NEAR
-                || result == BondService.SummonResult.SUMMONED_FRESH;
+    private static boolean isSummonSuccess(SummonResult result) {
+        return result == SummonResult.WALKING
+                || result == SummonResult.TELEPORTED_NEAR
+                || result == SummonResult.SUMMONED_FRESH;
     }
 
     private ServerPacketHandler() {}

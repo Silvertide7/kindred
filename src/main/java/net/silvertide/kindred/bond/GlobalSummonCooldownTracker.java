@@ -6,22 +6,9 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * Per-player wall-clock timestamp of the last successful summon. Used to enforce
- * {@code summonGlobalCooldownMs} — a roster-wide cooldown that prevents spam-summoning
- * across different bonds. Distinct from {@code summonCooldownTicks} which is per-bond.
- *
- * <p>Transient — not persisted. Cleared implicitly on server stop. Entries are kept on
- * logout so the cooldown isn't bypassable by reconnecting.</p>
- *
- * <p>Self-pruning: once an entry's elapsed time exceeds the configured cooldown its
- * stored timestamp has no effect on future calls (remaining always 0), so we remove
- * it both when reads notice the expiry and when {@link #recordSummon} runs. The map's
- * resident size stays bounded by "players currently inside an active cooldown
- * window," not "every player who ever summoned anything."</p>
- */
 public final class GlobalSummonCooldownTracker {
     private static final GlobalSummonCooldownTracker INSTANCE = new GlobalSummonCooldownTracker();
+    private GlobalSummonCooldownTracker() {}
 
     public static GlobalSummonCooldownTracker get() {
         return INSTANCE;
@@ -60,6 +47,4 @@ public final class GlobalSummonCooldownTracker {
     public void clear() {
         lastSummonMs.clear();
     }
-
-    private GlobalSummonCooldownTracker() {}
 }

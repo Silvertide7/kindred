@@ -8,7 +8,8 @@ import net.silvertide.kindred.client.data.HoldActionState;
 import net.silvertide.kindred.client.data.PreviewEntityCache;
 import net.silvertide.kindred.client.screen.RosterScreen;
 import net.silvertide.kindred.network.packet.S2CBindCandidateResult;
-import net.silvertide.kindred.network.packet.S2CCancelHold;
+import net.silvertide.kindred.network.packet.S2CHoldStart;
+import net.silvertide.kindred.network.packet.S2CHoldStop;
 import net.silvertide.kindred.network.packet.S2CRosterSync;
 
 public final class ClientPacketHandler {
@@ -31,14 +32,30 @@ public final class ClientPacketHandler {
         });
     }
 
-    public static void onCancelHold(S2CCancelHold payload, IPayloadContext context) {
+    /**
+     * Handle {@link S2CHoldStart}: populate {@link HoldActionState} with the
+     * server-pushed timestamps. The HUD overlay and roster-screen row visuals
+     * both read progress from there each frame.
+     */
+    public static void onHoldStart(S2CHoldStart payload, IPayloadContext context) {
+        context.enqueueWork(() ->
+                HoldActionState.applyServerStart(payload.action(), payload.bondId(),
+                        payload.startTick(), payload.endTick()));
+    }
+
+    /**
+     * Handle {@link S2CHoldStop}: clear {@link HoldActionState} (hides the HUD
+     * bar) and the roster screen's local press tracker if the screen is open.
+     * Both clears matter: without the latter, releasing a row button after a
+     * damage cancel would send a redundant {@code C2SCancelHold} (no-op on the
+     * server, but the visual press state would also linger until release).
+     */
+    public static void onHoldStop(S2CHoldStop payload, IPayloadContext context) {
         context.enqueueWork(() -> {
-            // Cancel keybind hold (if active).
-            HoldActionState.cancel();
-            // Cancel screen row-button hold (if a roster screen is currently open).
-            Screen current = Minecraft.getInstance().screen;
-            if (current instanceof RosterScreen rs) {
-                rs.cancelRowHold();
+            HoldActionState.applyServerStop();
+            Screen openScreen = Minecraft.getInstance().screen;
+            if (openScreen instanceof RosterScreen rosterScreen) {
+                rosterScreen.cancelRowHold();
             }
         });
     }

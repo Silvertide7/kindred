@@ -160,6 +160,18 @@ public final class Config {
         return Math.round(HOLD_TO_SUMMON_SECONDS.get() * 1000.0D);
     }
 
+    /** Hold durations in ticks for server-authoritative timing — gameTime advances
+     *  with the world clock (pauses with the game in single-player), unlike wall
+     *  clock. Floor at 1 tick so a 0-second config doesn't trip a divide-by-zero
+     *  in the client's progress math. */
+    public static long holdToDismissTicks() {
+        return Math.max(1L, holdToDismissMs() / 50L);
+    }
+
+    public static long holdToSummonTicks() {
+        return Math.max(1L, holdToSummonMs() / 50L);
+    }
+
     public static long summonGlobalCooldownMs() {
         return SUMMON_GLOBAL_COOLDOWN_SECONDS.get() * 1000L;
     }

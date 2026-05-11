@@ -9,21 +9,18 @@ import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import net.silvertide.kindred.attachment.Bond;
 import net.silvertide.kindred.attachment.BondRoster;
+import net.silvertide.kindred.bond.HoldManager;
 import net.silvertide.kindred.bond.bond_results.ClaimResult;
-import net.silvertide.kindred.bond.bond_results.DismissResult;
-import net.silvertide.kindred.bond.bond_results.SummonResult;
 import net.silvertide.kindred.config.Config;
 import net.silvertide.kindred.bond.BondEntityIndex;
-import net.silvertide.kindred.network.packet.C2SBreakBond;
+import net.silvertide.kindred.network.packet.C2SCancelHold;
 import net.silvertide.kindred.network.packet.C2SCheckBindCandidate;
 import net.silvertide.kindred.network.packet.C2SClaimEntity;
-import net.silvertide.kindred.network.packet.C2SDismissBond;
 import net.silvertide.kindred.network.packet.C2SOpenRoster;
 import net.silvertide.kindred.network.packet.C2SRenameBond;
 import net.silvertide.kindred.network.packet.C2SReorderBond;
+import net.silvertide.kindred.network.packet.C2SRequestHold;
 import net.silvertide.kindred.network.packet.C2SSetActivePet;
-import net.silvertide.kindred.network.packet.C2SSummonBond;
-import net.silvertide.kindred.network.packet.C2SSummonByKeybind;
 import net.silvertide.kindred.network.packet.S2CBindCandidateResult;
 import net.silvertide.kindred.network.packet.S2CRosterSync;
 import net.silvertide.kindred.registry.ModAttachments;
@@ -46,77 +43,30 @@ public final class ServerPacketHandler {
         });
     }
 
-    public static void onSummonByKeybind(C2SSummonByKeybind payload, IPayloadContext context) {
+    /**
+     * Handle {@link C2SRequestHold}: validate via {@link HoldManager#requestStart},
+     * which either registers the hold and pushes {@code S2CHoldStart} to the
+     * client, or surfaces a deny via vanilla {@code displayClientMessage}. All
+     * the eligibility logic lives in {@code HoldEligibility} — this handler is
+     * just a packet → service shim.
+     */
+    public static void onRequestHold(C2SRequestHold payload, IPayloadContext context) {
         context.enqueueWork(() -> {
             if (!(context.player() instanceof ServerPlayer player)) return;
-            BondRoster roster = player.getData(ModAttachments.BOND_ROSTER.get());
-            if (roster.bonds().isEmpty()) {
-                player.sendSystemMessage(Component.translatable("kindred.summon.no_bonds"));
-                return;
-            }
-            // The keybind always targets the active pet. By invariant (set on claim,
-            // restored on break, migrated on login) this is non-empty whenever bonds is.
-            Optional<UUID> activeId = roster.activePetId();
-            if (activeId.isEmpty()) {
-                player.sendSystemMessage(Component.translatable("kindred.summon.no_active"));
-                return;
-            }
-            SummonResult result = BondService.summon(player, activeId.get());
-            messageForSummonResult(result).ifPresent(player::sendSystemMessage);
-            if (isSummonSuccess(result)) sendRosterSync(player);
-        });
-    }
-
-    public static void onSummonBond(C2SSummonBond payload, IPayloadContext context) {
-        context.enqueueWork(() -> {
-            if (!(context.player() instanceof ServerPlayer player)) return;
-            SummonResult result = BondService.summon(player, payload.bondId());
-            messageForSummonResult(result).ifPresent(player::sendSystemMessage);
-            if (isSummonSuccess(result)) sendRosterSync(player);
+            HoldManager.get().requestStart(player, payload.action(), payload.bondId().orElse(null));
         });
     }
 
     /**
-     * Returns chat output for results the player should see. Successes
-     * ({@code WALKING}, {@code TELEPORTED_NEAR}, {@code SUMMONED_FRESH}) are silent —
-     * the pet appearing is its own feedback. {@code NO_SUCH_BOND} and
-     * {@code SPAWN_FAILED} are silent too: the first shouldn't reach here past
-     * client-side validation, the second is a technical fault that the player
-     * can't act on. The remaining states each map to a translatable reason.
+     * Handle {@link C2SCancelHold}: drop the player's hold and push
+     * {@code S2CHoldStop}. {@link HoldManager#cancel} is idempotent, so calls
+     * for players with no active hold (e.g. a release packet that arrives
+     * after the server-side completion handler) are silent no-ops.
      */
-    private static Optional<Component> messageForSummonResult(SummonResult result) {
-        String key = switch (result) {
-            case BANNED_DIMENSION -> "kindred.summon.banned_dimension";
-            case BANNED_BIOME -> "kindred.summon.banned_biome";
-            case ON_COOLDOWN -> "kindred.summon.on_cooldown";
-            case GLOBAL_COOLDOWN -> "kindred.summon.global_cooldown";
-            case REVIVAL_PENDING -> "kindred.summon.reviving";
-            case NO_SPACE -> "kindred.summon.no_space";
-            case PLAYER_AIRBORNE -> "kindred.summon.player_airborne";
-            case CROSS_DIM_BLOCKED -> "kindred.summon.cross_dim_blocked";
-            case WALKING, TELEPORTED_NEAR, SUMMONED_FRESH, NO_SUCH_BOND, SPAWN_FAILED -> null;
-        };
-        return Optional.ofNullable(key).map(Component::translatable);
-    }
-
-    public static void onBreakBond(C2SBreakBond payload, IPayloadContext context) {
+    public static void onCancelHold(C2SCancelHold payload, IPayloadContext context) {
         context.enqueueWork(() -> {
             if (!(context.player() instanceof ServerPlayer player)) return;
-            // Result is informational only — break success is reflected in the
-            // screen via sendRosterSync; failure (NO_SUCH_BOND) shouldn't reach
-            // here past client-side validation. No chat output either way.
-            BondService.breakBond(player, payload.bondId());
-            sendRosterSync(player);
-        });
-    }
-
-    public static void onDismissBond(C2SDismissBond payload, IPayloadContext context) {
-        context.enqueueWork(() -> {
-            if (!(context.player() instanceof ServerPlayer player)) return;
-            // Same shape as break — dismiss success/failure is reflected in the
-            // roster sync (entity discard + bond.dismissed flag), no chat needed.
-            DismissResult result = BondService.dismiss(player, payload.bondId());
-            if (result == DismissResult.DISMISSED) sendRosterSync(player);
+            HoldManager.get().cancel(player);
         });
     }
 
@@ -278,12 +228,6 @@ public final class ServerPacketHandler {
                 .remainingMs(player.getUUID(), Config.summonGlobalCooldownMs());
         int effectiveCap = BondService.effectiveMaxBonds(player);
         PacketDistributor.sendToPlayer(player, new S2CRosterSync(views, globalRemaining, effectiveCap));
-    }
-
-    private static boolean isSummonSuccess(SummonResult result) {
-        return result == SummonResult.WALKING
-                || result == SummonResult.TELEPORTED_NEAR
-                || result == SummonResult.SUMMONED_FRESH;
     }
 
     private ServerPacketHandler() {}

@@ -38,8 +38,10 @@
   "kindred.screen.summon_cooldown": "Summon Cooldown: %s",
   "kindred.hud.dismissing": "Dismissing…",
   "kindred.hud.summoning": "Summoning…",
+  "kindred.hud.breaking": "Breaking…",
   "kindred.summon.no_bonds": "No bonds to summon",
   "kindred.summon.no_active": "No active pet set",
+  "kindred.summon.no_such_bond": "That bond no longer exists",
   "kindred.summon.on_cooldown": "Pet's summon is on cooldown",
   "kindred.summon.global_cooldown": "Summon on cooldown",
   "kindred.summon.reviving": "Pet is respawning",
@@ -48,5 +50,9 @@
   "kindred.summon.no_space": "Not enough space to summon here",
   "kindred.summon.player_airborne": "Cannot summon while airborne",
   "kindred.summon.cross_dim_blocked": "Cross-dimensional summons are disabled",
+  "kindred.dismiss.no_such_bond": "That bond no longer exists",
+  "kindred.dismiss.not_loaded": "Pet isn't loaded in the world",
+  "kindred.dismiss.reviving": "Pet is respawning",
+  "kindred.break.no_such_bond": "That bond no longer exists",
   "kindred.bind.success": "Bonded with %s"
 }

@@ -7,12 +7,14 @@ import net.minecraft.world.entity.Entity;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.entity.living.LivingDamageEvent;
+import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
-import net.neoforged.neoforge.network.PacketDistributor;
+import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import net.silvertide.kindred.bond.BondEntityIndex;
+import net.silvertide.kindred.bond.GlobalSummonCooldownTracker;
+import net.silvertide.kindred.bond.HoldManager;
 import net.silvertide.kindred.config.Config;
-import net.silvertide.kindred.network.packet.S2CCancelHold;
 import net.silvertide.kindred.Kindred;
 import net.silvertide.kindred.attachment.Bond;
 import net.silvertide.kindred.attachment.BondRoster;
@@ -67,26 +69,81 @@ public final class PlayerEvents {
         ServerPacketHandler.sendRosterSync(player);
     }
 
+    /**
+     * Cancel an in-progress hold when the player takes damage — matches vanilla
+     * bow-draw / eating interrupt behavior. Gated by config so server admins can
+     * disable the interrupt entirely.
+     *
+     * <p>The {@code isHolding} pre-check avoids the cost of any work for the 99%
+     * of damaged players who aren't holding; {@link HoldManager#cancel} is also
+     * idempotent so removing the guard would still be correct, just slightly
+     * less efficient.</p>
+     */
     @SubscribeEvent
     public static void onLivingDamage(LivingDamageEvent.Pre event) {
         if (!Config.CANCEL_HOLD_ON_DAMAGE.get()) return;
         if (!(event.getEntity() instanceof ServerPlayer player)) return;
-        PacketDistributor.sendToPlayer(player, new S2CCancelHold());
+        if (HoldManager.get().isHolding(player.getUUID())) {
+            HoldManager.get().cancel(player);
+        }
     }
 
+    /**
+     * Cancel any in-progress hold when the player dies. Catches death paths that
+     * bypass {@code LivingDamageEvent.Pre} — {@code /kill}, void damage,
+     * instant-kill sources — and is harmless when the damage handler already
+     * cancelled (cancel is idempotent).
+     */
+    @SubscribeEvent
+    public static void onPlayerDeath(LivingDeathEvent event) {
+        if (!(event.getEntity() instanceof ServerPlayer player)) return;
+        HoldManager.get().cancel(player);
+    }
+
+    /**
+     * On logout, flush bonded-entity snapshots into player attachments (so live
+     * pets are captured into save data before they're discarded) and clear any
+     * in-progress hold so the {@link HoldManager} map doesn't carry stale
+     * entries for offline players.
+     */
     @SubscribeEvent
     public static void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
         if (!(event.getEntity() instanceof ServerPlayer player)) return;
         flushLoadedSnapshots(player);
+        HoldManager.get().cancel(player);
     }
 
+    /**
+     * Server-tick driver for {@link HoldManager}. Mirrors Homebound's
+     * {@code WarpManager} pattern — completion fires on the server tick, never
+     * on a client-asserted timer. Runs every tick regardless of player count,
+     * but {@code tickAll} bails immediately when the active-hold map is empty
+     * (the steady state on any server).
+     */
+    @SubscribeEvent
+    public static void onServerTick(ServerTickEvent.Post event) {
+        HoldManager.get().tickAll(event.getServer());
+    }
+
+    /**
+     * Final flush on server stop: capture live bonded-entity state into player
+     * attachments (so it survives the save), then clear every in-memory singleton.
+     *
+     * <p>The singleton clears matter in single-player, where the integrated server
+     * stops but the client JVM keeps running — the static {@code INSTANCE} fields
+     * of these singletons would otherwise carry their state into the next world
+     * the player loads. On a dedicated server this is a no-op (the next start is
+     * a fresh JVM with freshly-initialized singletons), but the cleanup is cheap
+     * and the single-player correctness is what we care about.</p>
+     */
     @SubscribeEvent
     public static void onServerStopping(ServerStoppingEvent event) {
-        // Final flush so live entity state is captured into player attachments before save.
         for (ServerPlayer player : event.getServer().getPlayerList().getPlayers()) {
             flushLoadedSnapshots(player);
         }
         BondEntityIndex.get().clear();
+        HoldManager.get().clear();
+        GlobalSummonCooldownTracker.get().clear();
     }
 
     /**

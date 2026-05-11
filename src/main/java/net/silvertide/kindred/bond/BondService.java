@@ -211,26 +211,47 @@ public final class BondService {
         return DismissResult.DISMISSED;
     }
 
-    public static SummonResult summon(ServerPlayer player, UUID bondId) {
+    public static Optional<SummonResult> checkSummonGate(ServerPlayer player, UUID bondId) {
         BondRoster roster = player.getData(ModAttachments.BOND_ROSTER.get());
         Optional<Bond> maybeBond = roster.get(bondId);
-        if (maybeBond.isEmpty()) return SummonResult.NO_SUCH_BOND;
+        if (maybeBond.isEmpty()) return Optional.of(SummonResult.NO_SUCH_BOND);
         Bond bond = maybeBond.get();
 
-        long now = System.currentTimeMillis();
-        long cooldownMs = Config.summonCooldownMs();
-        if (now - bond.lastSummonedAt() < cooldownMs) return SummonResult.ON_COOLDOWN;
+        if (isRevivalPending(bond)) return Optional.of(SummonResult.REVIVAL_PENDING);
 
-        long revivalCooldownMs = Config.revivalCooldownMs();
-        if (revivalCooldownMs > 0L && bond.diedAt().isPresent()) {
-            long diedAt = bond.diedAt().get();
-            if (now - diedAt < revivalCooldownMs) return SummonResult.REVIVAL_PENDING;
+        long nowMs = System.currentTimeMillis();
+        if (nowMs - bond.lastSummonedAt() < Config.summonCooldownMs()) {
+            return Optional.of(SummonResult.ON_COOLDOWN);
         }
 
         long globalCooldownMs = Config.summonGlobalCooldownMs();
         if (GlobalSummonCooldownTracker.get().remainingMs(player.getUUID(), globalCooldownMs) > 0L) {
-            return SummonResult.GLOBAL_COOLDOWN;
+            return Optional.of(SummonResult.GLOBAL_COOLDOWN);
         }
+
+        return Optional.empty();
+    }
+
+    /**
+     * True if the bond is in its post-death revival cooldown window. Returns
+     * false when there's no death timestamp or when revival cooldowns are
+     * disabled by config. Shared between {@link #checkSummonGate} and the
+     * dismiss/break eligibility checks in {@code HoldEligibility}.
+     */
+    public static boolean isRevivalPending(Bond bond) {
+        if (bond.diedAt().isEmpty()) return false;
+        long revivalCooldownMs = Config.revivalCooldownMs();
+        if (revivalCooldownMs <= 0L) return false;
+        return System.currentTimeMillis() - bond.diedAt().get() < revivalCooldownMs;
+    }
+
+    public static SummonResult summon(ServerPlayer player, UUID bondId) {
+        Optional<SummonResult> gateFailure = checkSummonGate(player, bondId);
+        if (gateFailure.isPresent()) return gateFailure.get();
+
+        // checkSummonGate guarantees the bond exists, so this is safe.
+        Bond bond = player.getData(ModAttachments.BOND_ROSTER.get()).get(bondId).orElseThrow();
+
         if (Config.REQUIRE_SPACE.get() && !isPlayerGrounded(player)) return SummonResult.PLAYER_AIRBORNE;
 
         ServerLevel playerLevel = (ServerLevel) player.level();
@@ -259,7 +280,7 @@ public final class BondService {
                     wake(old);
                     mob.getNavigation().moveTo(player.getX(), player.getY(), player.getZ(), Config.WALK_SPEED.get());
                     playSummonFx(playerLevel, player.getX(), player.getY(), player.getZ(), false);
-                    writeSummonTimestamp(player, bond, roster);
+                    writeSummonTimestamp(player, bond);
                     GlobalSummonCooldownTracker.get().recordSummon(player.getUUID());
                     return SummonResult.WALKING;
                 }
@@ -458,8 +479,12 @@ public final class BondService {
         }
     }
 
-    private static void writeSummonTimestamp(ServerPlayer player, Bond bond, BondRoster roster) {
+    private static void writeSummonTimestamp(ServerPlayer player, Bond bond) {
+        // Re-read the roster fresh — we don't hold a reference across the call
+        // chain that got us here, and the player's roster may have been touched
+        // by a sibling packet handler on the same server tick.
         // Successful summon also clears any pending revival cooldown — this IS the revival.
+        BondRoster roster = player.getData(ModAttachments.BOND_ROSTER.get());
         Bond updated = bond.withLastSummonedAt(System.currentTimeMillis()).withDiedAt(Optional.empty());
         player.setData(ModAttachments.BOND_ROSTER.get(), roster.with(updated));
     }

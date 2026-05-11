@@ -103,30 +103,13 @@ public final class HoldManager {
 
     private void executeSummon(ServerPlayer player, UUID bondId) {
         SummonResult result = BondService.summon(player, bondId);
-        chatMessageFor(result).ifPresent(player::sendSystemMessage);
-        if (isSummonSuccess(result)) {
+        if (result != SummonResult.NO_SUCH_BOND) {
+            result.translationKey()
+                    .map(Component::translatable)
+                    .ifPresent(player::sendSystemMessage);
+        }
+        if (result.isSuccess()) {
             ServerPacketHandler.sendRosterSync(player);
         }
-    }
-
-    private static Optional<Component> chatMessageFor(SummonResult result) {
-        String translationKey = switch (result) {
-            case BANNED_DIMENSION -> "kindred.summon.banned_dimension";
-            case BANNED_BIOME -> "kindred.summon.banned_biome";
-            case ON_COOLDOWN -> "kindred.summon.on_cooldown";
-            case GLOBAL_COOLDOWN -> "kindred.summon.global_cooldown";
-            case REVIVAL_PENDING -> "kindred.summon.reviving";
-            case NO_SPACE -> "kindred.summon.no_space";
-            case PLAYER_AIRBORNE -> "kindred.summon.player_airborne";
-            case CROSS_DIM_BLOCKED -> "kindred.summon.cross_dim_blocked";
-            case WALKING, TELEPORTED_NEAR, SUMMONED_FRESH, NO_SUCH_BOND, SPAWN_FAILED -> null;
-        };
-        return Optional.ofNullable(translationKey).map(Component::translatable);
-    }
-
-    private static boolean isSummonSuccess(SummonResult result) {
-        return result == SummonResult.WALKING
-                || result == SummonResult.TELEPORTED_NEAR
-                || result == SummonResult.SUMMONED_FRESH;
     }
 }

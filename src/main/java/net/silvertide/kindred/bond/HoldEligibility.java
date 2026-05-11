@@ -4,6 +4,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.silvertide.kindred.attachment.Bond;
 import net.silvertide.kindred.attachment.BondRoster;
+import net.silvertide.kindred.bond.bond_results.SummonResult;
 import net.silvertide.kindred.config.Config;
 import net.silvertide.kindred.registry.ModAttachments;
 
@@ -15,6 +16,7 @@ public final class HoldEligibility {
 
     public static final double DISMISS_RADIUS = 6.0D;
     public static final double DISMISS_RADIUS_SQ = DISMISS_RADIUS * DISMISS_RADIUS;
+
     private static final long BREAK_HOLD_TICKS = 20L;
 
     public sealed interface Result {
@@ -46,24 +48,10 @@ public final class HoldEligibility {
     }
 
     private static Result checkSummon(ServerPlayer player, UUID bondId, long durationTicks) {
-        BondRoster roster = player.getData(ModAttachments.BOND_ROSTER.get());
-        Optional<Bond> maybeBond = roster.get(bondId);
-        if (maybeBond.isEmpty()) return new Result.Denied("kindred.summon.no_such_bond");
-        Bond bond = maybeBond.get();
-
-        if (isRevivalPending(bond)) return new Result.Denied("kindred.summon.reviving");
-
-        long nowMs = System.currentTimeMillis();
-        long perBondCooldownMs = Config.summonCooldownMs();
-        if (nowMs - bond.lastSummonedAt() < perBondCooldownMs) {
-            return new Result.Denied("kindred.summon.on_cooldown");
+        Optional<SummonResult> gateFailure = BondService.checkSummonGate(player, bondId);
+        if (gateFailure.isPresent()) {
+            return new Result.Denied(gateFailure.get().translationKey().orElseThrow());
         }
-
-        long globalCooldownMs = Config.summonGlobalCooldownMs();
-        if (GlobalSummonCooldownTracker.get().remainingMs(player.getUUID(), globalCooldownMs) > 0L) {
-            return new Result.Denied("kindred.summon.global_cooldown");
-        }
-
         return new Result.Allowed(durationTicks);
     }
 
@@ -71,7 +59,9 @@ public final class HoldEligibility {
         BondRoster roster = player.getData(ModAttachments.BOND_ROSTER.get());
         Optional<Bond> maybeBond = roster.get(bondId);
         if (maybeBond.isEmpty()) return new Result.Denied("kindred.dismiss.no_such_bond");
-        if (isRevivalPending(maybeBond.get())) return new Result.Denied("kindred.dismiss.reviving");
+        if (BondService.isRevivalPending(maybeBond.get())) {
+            return new Result.Denied("kindred.dismiss.reviving");
+        }
 
         Optional<Entity> loadedEntity = BondEntityIndex.get().find(bondId);
         if (loadedEntity.isEmpty()) return new Result.Denied("kindred.dismiss.not_loaded");
@@ -83,14 +73,9 @@ public final class HoldEligibility {
         BondRoster roster = player.getData(ModAttachments.BOND_ROSTER.get());
         Optional<Bond> maybeBond = roster.get(bondId);
         if (maybeBond.isEmpty()) return new Result.Denied("kindred.break.no_such_bond");
-        if (isRevivalPending(maybeBond.get())) return new Result.Denied("kindred.break.reviving");
+        if (BondService.isRevivalPending(maybeBond.get())) {
+            return new Result.Denied("kindred.break.reviving");
+        }
         return new Result.Allowed(BREAK_HOLD_TICKS);
-    }
-
-    private static boolean isRevivalPending(Bond bond) {
-        if (bond.diedAt().isEmpty()) return false;
-        long revivalCooldownMs = Config.revivalCooldownMs();
-        if (revivalCooldownMs <= 0L) return false;
-        return System.currentTimeMillis() - bond.diedAt().get() < revivalCooldownMs;
     }
 }

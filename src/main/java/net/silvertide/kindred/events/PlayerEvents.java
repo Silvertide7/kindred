@@ -69,16 +69,6 @@ public final class PlayerEvents {
         ServerPacketHandler.sendRosterSync(player);
     }
 
-    /**
-     * Cancel an in-progress hold when the player takes damage — matches vanilla
-     * bow-draw / eating interrupt behavior. Gated by config so server admins can
-     * disable the interrupt entirely.
-     *
-     * <p>The {@code isHolding} pre-check avoids the cost of any work for the 99%
-     * of damaged players who aren't holding; {@link HoldManager#cancel} is also
-     * idempotent so removing the guard would still be correct, just slightly
-     * less efficient.</p>
-     */
     @SubscribeEvent
     public static void onLivingDamage(LivingDamageEvent.Pre event) {
         if (!Config.CANCEL_HOLD_ON_DAMAGE.get()) return;
@@ -88,24 +78,12 @@ public final class PlayerEvents {
         }
     }
 
-    /**
-     * Cancel any in-progress hold when the player dies. Catches death paths that
-     * bypass {@code LivingDamageEvent.Pre} — {@code /kill}, void damage,
-     * instant-kill sources — and is harmless when the damage handler already
-     * cancelled (cancel is idempotent).
-     */
     @SubscribeEvent
     public static void onPlayerDeath(LivingDeathEvent event) {
         if (!(event.getEntity() instanceof ServerPlayer player)) return;
         HoldManager.get().cancel(player);
     }
 
-    /**
-     * On logout, flush bonded-entity snapshots into player attachments (so live
-     * pets are captured into save data before they're discarded) and clear any
-     * in-progress hold so the {@link HoldManager} map doesn't carry stale
-     * entries for offline players.
-     */
     @SubscribeEvent
     public static void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
         if (!(event.getEntity() instanceof ServerPlayer player)) return;
@@ -113,29 +91,11 @@ public final class PlayerEvents {
         HoldManager.get().cancel(player);
     }
 
-    /**
-     * Server-tick driver for {@link HoldManager}. Mirrors Homebound's
-     * {@code WarpManager} pattern — completion fires on the server tick, never
-     * on a client-asserted timer. Runs every tick regardless of player count,
-     * but {@code tickAll} bails immediately when the active-hold map is empty
-     * (the steady state on any server).
-     */
     @SubscribeEvent
     public static void onServerTick(ServerTickEvent.Post event) {
         HoldManager.get().tickAll(event.getServer());
     }
 
-    /**
-     * Final flush on server stop: capture live bonded-entity state into player
-     * attachments (so it survives the save), then clear every in-memory singleton.
-     *
-     * <p>The singleton clears matter in single-player, where the integrated server
-     * stops but the client JVM keeps running — the static {@code INSTANCE} fields
-     * of these singletons would otherwise carry their state into the next world
-     * the player loads. On a dedicated server this is a no-op (the next start is
-     * a fresh JVM with freshly-initialized singletons), but the cleanup is cheap
-     * and the single-player correctness is what we care about.</p>
-     */
     @SubscribeEvent
     public static void onServerStopping(ServerStoppingEvent event) {
         for (ServerPlayer player : event.getServer().getPlayerList().getPlayers()) {
@@ -146,11 +106,6 @@ public final class PlayerEvents {
         GlobalSummonCooldownTracker.get().clear();
     }
 
-    /**
-     * Snapshot every loaded bonded entity belonging to the player into their roster.
-     * Used by logout and server-stop to capture state the player attachment would
-     * otherwise miss (since the entity hasn't unloaded yet).
-     */
     private static void flushLoadedSnapshots(ServerPlayer player) {
         BondRoster roster = player.getData(ModAttachments.BOND_ROSTER.get());
         if (roster.bonds().isEmpty()) return;

@@ -12,18 +12,6 @@ import net.silvertide.kindred.bond.HoldManager;
 import java.util.Optional;
 import java.util.UUID;
 
-/**
- * Client asks the server to begin a hold-to-confirm. Fired from
- * {@code KeybindHandler} on key press and from {@code RosterScreen} on row-button
- * click. The server validates against {@code HoldEligibility} and replies with
- * either {@link S2CHoldStart} (begin rendering the bar) or a vanilla
- * {@code displayClientMessage} action-bar deny.
- *
- * <p>{@code bondId} is empty for {@link HoldManager.Action#SUMMON_KEYBIND} only —
- * the server resolves the active pet at completion time, since the active
- * pointer could change mid-hold via the Set Active button. Every other action
- * carries an explicit target.</p>
- */
 public record C2SRequestHold(HoldManager.Action action, Optional<UUID> bondId) implements CustomPacketPayload {
     public static final Type<C2SRequestHold> TYPE = new Type<>(
             ResourceLocation.fromNamespaceAndPath(Kindred.MODID, "c2s_request_hold"));

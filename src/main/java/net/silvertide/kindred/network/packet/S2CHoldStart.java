@@ -12,22 +12,6 @@ import net.silvertide.kindred.bond.HoldManager;
 import java.util.Optional;
 import java.util.UUID;
 
-/**
- * Server confirms a hold has begun. The client populates
- * {@code HoldActionState} from this payload and renders the bar as
- * {@code (level.getGameTime() - startTick) / (endTick - startTick)}, with the
- * per-frame partial tick added on for smoothness.
- *
- * <p>The {@code (startTick, endTick)} timestamp pattern (rather than a single
- * "duration" value) mirrors Homebound's {@code CB_SyncWarpScheduleMessage} and
- * has two nice properties: it pauses naturally with the game clock in
- * single-player, and the client never has to record its own receive time.</p>
- *
- * @param action     which action is being held (drives the HUD label).
- * @param bondId     target bond — empty only for {@link HoldManager.Action#SUMMON_KEYBIND}.
- * @param startTick  server's {@code getGameTime()} when the hold began.
- * @param endTick    server's {@code getGameTime()} when it will complete.
- */
 public record S2CHoldStart(HoldManager.Action action, Optional<UUID> bondId, long startTick, long endTick)
         implements CustomPacketPayload {
     public static final Type<S2CHoldStart> TYPE = new Type<>(

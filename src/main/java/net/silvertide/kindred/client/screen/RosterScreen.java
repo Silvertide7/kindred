@@ -67,6 +67,7 @@ public final class RosterScreen extends Screen {
     private static final int CLAIM_BTN_H = 20;
     private static final long BREAK_CONFIRM_TTL_MS = 3000L;
     private static final double CLAIM_RAYCAST_DISTANCE = 8.0D;
+    private static final long BIND_HOLD_MS = 1000L;
 
     // ARGB palette
     private static final int C_BG = 0xCC101418;
@@ -134,6 +135,11 @@ public final class RosterScreen extends Screen {
 
     private UUID breakArmedBondId = null;
     private long breakArmedExpiresAt = 0L;
+
+    /** Wall-clock start time of an in-progress Bind button hold; 0 when not held.
+     *  Bonding is a one-time commitment, so we gate clicks behind a brief hold to
+     *  prevent fat-finger mistakes — purely client-side, no server involvement. */
+    private long bindHoldStartMs = 0L;
 
     /** Tracks which row button the mouse is currently pressing. Null when no
      *  button is held.
@@ -250,6 +256,8 @@ public final class RosterScreen extends Screen {
         super.removed();
         PreviewEntityCache.clear();
         cancelRowHoldAndNotifyServer();
+        // Bind hold is purely client-side, no server notify — just drop the timer.
+        bindHoldStartMs = 0L;
     }
 
     @Override
@@ -259,6 +267,9 @@ public final class RosterScreen extends Screen {
         // bond was removed under us. Completion itself runs server-side; this
         // just keeps the local press state honest.
         processRowHold(mouseX, mouseY);
+        // Local client-side Bind button hold — fires the claim packet on
+        // completion or clears the timer on drift-off / candidate-gone.
+        processBindHold(mouseX, mouseY);
 
         super.render(g, mouseX, mouseY, partialTick);
 
@@ -459,7 +470,8 @@ public final class RosterScreen extends Screen {
             String typeName = BuiltInRegistries.ENTITY_TYPE.getKey(candidate.getType()).getPath();
             Component label = Component.translatable("kindred.screen.bind", typeName);
             drawButton(g, claimBtnX, btnY, claimBtnW, CLAIM_BTN_H, label,
-                    hover ? C_BTN_CLAIM_HOVER : C_BTN_CLAIM);
+                    hover ? C_BTN_CLAIM_HOVER : C_BTN_CLAIM,
+                    bindHoldProgress());
             return;
         }
         // No bindable candidate: show the deny reason if the server gave us one
@@ -660,6 +672,52 @@ public final class RosterScreen extends Screen {
             // didn't change, but for our purposes the cancel is unconditional.
             cancelRowHoldAndNotifyServer();
         }
+    }
+
+    /**
+     * Client-side Bind button hold. Each render frame, validate the press state
+     * (candidate still bindable, cursor still on the button) and either fire the
+     * claim packet on completion or clear the timer on drift-off.
+     *
+     * <p>Wall-clock based ({@code System.currentTimeMillis}) because this is
+     * short, screen-local UX timing — not gameplay logic that needs to pause
+     * with the world.</p>
+     */
+    private void processBindHold(int mouseX, int mouseY) {
+        if (bindHoldStartMs == 0L) return;
+
+        Entity candidate = findClaimCandidate();
+        if (candidate == null) {
+            // Candidate vanished (e.g. server roster sync arrived between click
+            // and now, or the entity unloaded). Drop the press silently.
+            bindHoldStartMs = 0L;
+            return;
+        }
+
+        int btnY = currentBindBtnY();
+        if (!inBox(mouseX, mouseY, claimBtnX, btnY, claimBtnW, CLAIM_BTN_H)) {
+            // Cursor drifted off the button — cancel.
+            bindHoldStartMs = 0L;
+            return;
+        }
+
+        long elapsed = System.currentTimeMillis() - bindHoldStartMs;
+        if (elapsed >= BIND_HOLD_MS) {
+            PacketDistributor.sendToServer(new C2SClaimEntity(candidate.getUUID()));
+            // Clear the candidate immediately so the button disappears on completion;
+            // server replies via chat for success / failure either way. Avoids
+            // showing "Bond to this Wolf" after the wolf is already bonded.
+            initialCandidate = null;
+            bindCandidateConfirmed = null;
+            bindDenyKey = Optional.empty();
+            bindHoldStartMs = 0L;
+        }
+    }
+
+    /** 0..1 progress of the in-progress Bind button hold, 0 when not held. */
+    private float bindHoldProgress() {
+        if (bindHoldStartMs == 0L) return 0F;
+        return Math.min(1F, (System.currentTimeMillis() - bindHoldStartMs) / (float) BIND_HOLD_MS);
     }
 
     private void renderRow(GuiGraphics g, BondView bond, int x, int y, int w, int mx, int my) {
@@ -927,13 +985,11 @@ public final class RosterScreen extends Screen {
         if (inBox(mxAll, myAll, claimBtnX, currentBindBtnY(), claimBtnW, CLAIM_BTN_H)) {
             Entity candidate = findClaimCandidate();
             if (candidate != null) {
-                PacketDistributor.sendToServer(new C2SClaimEntity(candidate.getUUID()));
-                // Clear the candidate immediately so the button disappears on click;
-                // server replies via chat for success / failure either way. Avoids
-                // showing "Bond to this Wolf" after the wolf is already bonded.
-                initialCandidate = null;
-                bindCandidateConfirmed = null;
-                bindDenyKey = java.util.Optional.empty();
+                // Start the hold timer instead of firing the claim packet
+                // immediately. processBindHold (driven each render frame) fires
+                // C2SClaimEntity when the hold completes; mouse-release, drag-off,
+                // or screen close clears the timer with no packet sent.
+                bindHoldStartMs = System.currentTimeMillis();
                 return true;
             }
         }
@@ -1126,14 +1182,15 @@ public final class RosterScreen extends Screen {
     }
 
     /**
-     * Left-mouse release on a row button → cancel the hold and tell the server.
-     * The button==0 check filters out right/middle releases that don't affect
-     * the press tracker.
+     * Left-mouse release → cancel any in-progress hold. Row holds notify the
+     * server (it owns those); the Bind button hold is purely client-side and
+     * just clears the timer.
      */
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
-        if (button == 0 && rowHold != null) {
-            cancelRowHoldAndNotifyServer();
+        if (button == 0) {
+            if (rowHold != null) cancelRowHoldAndNotifyServer();
+            if (bindHoldStartMs != 0L) bindHoldStartMs = 0L;
         }
         return super.mouseReleased(mouseX, mouseY, button);
     }

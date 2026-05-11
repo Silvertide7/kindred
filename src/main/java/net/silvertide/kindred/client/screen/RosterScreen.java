@@ -367,11 +367,15 @@ public final class RosterScreen extends Screen {
                     entity);
         }
 
+        boolean allowRename = Config.ALLOW_RENAME.get();
         int btnX = previewX + 4;
         int btnW = PREVIEW_W - 8;
         int setActiveBtnY = paneBottom - PANE_BTN_PAD - ACTION_BTN_H;
         int renameBtnY = setActiveBtnY - ACTION_BTN_GAP - ACTION_BTN_H;
-        int moveBtnY = renameBtnY - ACTION_BTN_GAP - ACTION_BTN_H;
+        // When rename is disabled, slide Move into Rename's slot so there's no gap.
+        int moveBtnY = allowRename
+                ? renameBtnY - ACTION_BTN_GAP - ACTION_BTN_H
+                : renameBtnY;
 
         // Move Up | Move Down — split row at the top of the stack. Disabled when the
         // selected bond is already at the corresponding edge of the list.
@@ -405,14 +409,16 @@ public final class RosterScreen extends Screen {
                 Component.translatable("kindred.screen.move_down"),
                 moveDownColor, 0F, canMoveDown ? C_TEXT : C_BTN_TEXT_DISABLED);
 
-        // Rename button (middle)
-        boolean editingThis = selected.bondId().equals(renamingBondId);
-        boolean renameHover = !editingThis && inBox(mouseX, mouseY, btnX, renameBtnY, btnW, ACTION_BTN_H);
-        int renameColor = editingThis
-                ? C_BTN_CLAIM_HOVER  // brighter while in edit mode to signal active state
-                : (renameHover ? C_BTN_CLAIM_HOVER : C_BTN_CLAIM);
-        drawButton(g, btnX, renameBtnY, btnW, ACTION_BTN_H,
-                Component.translatable("kindred.screen.rename"), renameColor);
+        // Rename button (middle) — hidden when allowRename is false.
+        if (allowRename) {
+            boolean editingThis = selected.bondId().equals(renamingBondId);
+            boolean renameHover = !editingThis && inBox(mouseX, mouseY, btnX, renameBtnY, btnW, ACTION_BTN_H);
+            int renameColor = editingThis
+                    ? C_BTN_CLAIM_HOVER  // brighter while in edit mode to signal active state
+                    : (renameHover ? C_BTN_CLAIM_HOVER : C_BTN_CLAIM);
+            drawButton(g, btnX, renameBtnY, btnW, ACTION_BTN_H,
+                    Component.translatable("kindred.screen.rename"), renameColor);
+        }
 
         // Set Active button (bottom of stack)
         boolean isActive = selected.isActive();
@@ -439,7 +445,10 @@ public final class RosterScreen extends Screen {
     }
 
     private int moveBtnY() {
-        return renameBtnY() - ACTION_BTN_GAP - ACTION_BTN_H;
+        // When rename is hidden, Move slides down into Rename's slot — see render path.
+        return Config.ALLOW_RENAME.get()
+                ? renameBtnY() - ACTION_BTN_GAP - ACTION_BTN_H
+                : renameBtnY();
     }
 
     private BondView currentSelection() {
@@ -825,7 +834,7 @@ public final class RosterScreen extends Screen {
             summonLabel = Component.empty();
         } else if (summonDisabled) {
             long perBondRemaining = ClientRosterData.bondCooldownRemainingMsNow(bond);
-            long perBondTotal = Config.SUMMON_COOLDOWN_TICKS.get() * 50L;
+            long perBondTotal = Config.summonCooldownMs();
             long globalRemaining = ClientRosterData.globalCooldownRemainingMsNow();
             long globalTotal = Config.summonGlobalCooldownMs();
             if (perBondRemaining >= globalRemaining) {
@@ -1043,7 +1052,8 @@ public final class RosterScreen extends Screen {
                 return true;
             }
 
-            if (inBox(mxAll, myAll, btnX, renameBtnY(), btnW, ACTION_BTN_H)) {
+            if (Config.ALLOW_RENAME.get()
+                    && inBox(mxAll, myAll, btnX, renameBtnY(), btnW, ACTION_BTN_H)) {
                 if (renamingBondId != null) commitRename();
                 startRename(selectedView);
                 return true;

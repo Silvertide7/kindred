@@ -104,7 +104,7 @@ public final class HoldEligibility {
         if (isRevivalPending(bond)) return new Result.Denied("kindred.summon.reviving");
 
         long nowMs = System.currentTimeMillis();
-        long perBondCooldownMs = Config.SUMMON_COOLDOWN_TICKS.get() * 50L;
+        long perBondCooldownMs = Config.summonCooldownMs();
         if (nowMs - bond.lastSummonedAt() < perBondCooldownMs) {
             return new Result.Denied("kindred.summon.on_cooldown");
         }

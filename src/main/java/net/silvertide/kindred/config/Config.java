@@ -26,6 +26,12 @@ public final class Config {
                      "is below the cost.")
             .defineInRange("bondXpLevelCost", 0, 0, 1000);
 
+    public static final ModConfigSpec.BooleanValue ALLOW_RENAME = BUILDER
+            .comment("",
+                     "If true (default), players can rename their bonded pets via the roster screen. " +
+                     "If false, the Rename button is hidden and rename packets are rejected server-side.")
+            .define("allowRename", true);
+
     static { BUILDER.pop(); }
 
     static { BUILDER.push("summoning"); }
@@ -62,14 +68,14 @@ public final class Config {
 
     static { BUILDER.push("cooldowns"); }
 
-    public static final ModConfigSpec.IntValue SUMMON_COOLDOWN_TICKS = BUILDER
-            .comment("Cooldown between summons of the same bond, in ticks (20 = 1 second).")
-            .defineInRange("summonCooldownTicks", 100, 0, 72000);
+    public static final ModConfigSpec.IntValue SUMMON_COOLDOWN_SECONDS = BUILDER
+            .comment("Cooldown between summons of the same bond, in seconds.")
+            .defineInRange("summonCooldownSeconds", 5, 0, 3600);
 
     public static final ModConfigSpec.IntValue SUMMON_GLOBAL_COOLDOWN_SECONDS = BUILDER
             .comment("",
                      "Per-player cooldown (in seconds) between any two summons regardless of which bond. " +
-                     "0 disables. Distinct from summonCooldownTicks which only blocks summoning the same pet repeatedly.")
+                     "0 disables. Distinct from summonCooldownSeconds which only blocks summoning the same pet repeatedly.")
             .defineInRange("summonGlobalCooldownSeconds", 10, 0, 86400);
 
     static { BUILDER.pop(); }
@@ -170,6 +176,10 @@ public final class Config {
 
     public static long holdToSummonTicks() {
         return Math.max(1L, holdToSummonMs() / 50L);
+    }
+
+    public static long summonCooldownMs() {
+        return SUMMON_COOLDOWN_SECONDS.get() * 1000L;
     }
 
     public static long summonGlobalCooldownMs() {

@@ -150,6 +150,7 @@ public final class ServerPacketHandler {
     public static void onRenameBond(C2SRenameBond payload, IPayloadContext context) {
         context.enqueueWork(() -> {
             if (!(context.player() instanceof ServerPlayer player)) return;
+            if (!Config.ALLOW_RENAME.get()) return;
             BondRoster roster = player.getData(ModAttachments.BOND_ROSTER.get());
             Optional<Bond> bond = roster.get(payload.bondId());
             if (bond.isEmpty()) return;
@@ -202,7 +203,7 @@ public final class ServerPacketHandler {
     public static void sendRosterSync(ServerPlayer player) {
         BondRoster roster = player.getData(ModAttachments.BOND_ROSTER.get());
         long now = System.currentTimeMillis();
-        long cooldownMs = Config.SUMMON_COOLDOWN_TICKS.get() * 50L;
+        long cooldownMs = Config.summonCooldownMs();
         long revivalCooldownMs = Config.revivalCooldownMs();
         // Use the LinkedHashMap's insertion order — that's the player's chosen row
         // order (mutated via C2SReorderBond and preserved across save/load).

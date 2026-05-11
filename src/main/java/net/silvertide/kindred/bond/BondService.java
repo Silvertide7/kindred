@@ -288,7 +288,7 @@ public final class BondService {
         Bond bond = maybeBond.get();
 
         long now = System.currentTimeMillis();
-        long cooldownMs = Config.SUMMON_COOLDOWN_TICKS.get() * 50L;
+        long cooldownMs = Config.summonCooldownMs();
         if (now - bond.lastSummonedAt() < cooldownMs) return SummonResult.ON_COOLDOWN;
 
         // Per-bond revival cooldown (after non-permanent death).

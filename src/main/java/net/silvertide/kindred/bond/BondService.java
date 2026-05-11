@@ -194,14 +194,18 @@ public final class BondService {
         ServerLevel level = (ServerLevel) player.level();
         KindredSavedData saved = KindredSavedData.get(level);
 
-        // Only materialize-before-break when the pet was dismissed via the screen
-        // (i.e. only the snapshot exists, no chunk-saved entity). For pets just sitting
-        // in an unloaded chunk somewhere — at the player's home base, say — leave them
-        // where they are; teleporting to a player who's about to break the bond could
-        // strand them in a dangerous spot with no way to recall.
+        // Only materialize-before-break when the pet exists solely as a snapshot
+        // — dismissed via the screen, or dead with the carcass already discarded.
+        // In both cases there's no chunk-saved entity anywhere, so the snapshot
+        // is the wolf's only remaining home; stripping the bond without first
+        // materializing would lose it forever. For pets just sitting in an
+        // unloaded chunk somewhere — at the player's home base, say — leave them
+        // where they are; teleporting to a player who's about to break the bond
+        // could strand them in a dangerous spot with no way to recall.
         Optional<Entity> existing = BondEntityIndex.get().find(bondId);
-        if (existing.isEmpty() && maybeBond.get().dismissed()) {
-            materializeFresh(player, maybeBond.get(), level, saved);
+        Bond bond = maybeBond.get();
+        if (existing.isEmpty() && (bond.dismissed() || bond.diedAt().isPresent())) {
+            materializeFresh(player, bond, level, saved);
             existing = BondEntityIndex.get().find(bondId);
         }
 

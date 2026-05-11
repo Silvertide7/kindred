@@ -144,12 +144,17 @@ public final class HoldEligibility {
     }
 
     /**
-     * Break eligibility — the only requirement is that the bond still exists.
-     * Duration is hardcoded (see {@link #BREAK_HOLD_TICKS}).
+     * Break eligibility — bond exists and isn't in post-death revival. Locking
+     * Break behind the revival window mirrors Summon/Dismiss so the whole row's
+     * controls go quiet together until the cooldown elapses; otherwise a player
+     * could break the bond mid-revival and bypass the cooldown via the new
+     * materialize-on-break path.
      */
     private static Result checkBreak(ServerPlayer player, UUID bondId) {
         BondRoster roster = player.getData(ModAttachments.BOND_ROSTER.get());
-        if (roster.get(bondId).isEmpty()) return new Result.Denied("kindred.break.no_such_bond");
+        Optional<Bond> maybeBond = roster.get(bondId);
+        if (maybeBond.isEmpty()) return new Result.Denied("kindred.break.no_such_bond");
+        if (isRevivalPending(maybeBond.get())) return new Result.Denied("kindred.break.reviving");
         return new Result.Allowed(BREAK_HOLD_TICKS);
     }
 

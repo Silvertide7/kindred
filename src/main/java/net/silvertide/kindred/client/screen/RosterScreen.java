@@ -84,6 +84,7 @@ public final class RosterScreen extends Screen {
     private static final int C_BTN_BREAK = 0xFF7A3A3A;
     private static final int C_BTN_BREAK_HOVER = 0xFF994A4A;
     private static final int C_BTN_BREAK_CONFIRM = 0xFFD45A5A;
+    private static final int C_BTN_BREAK_DISABLED = 0xFF302222;
     private static final int C_BTN_DISMISS = 0xFF6A5A3A;
     private static final int C_BTN_DISMISS_HOVER = 0xFF8A7A52;
     private static final int C_BTN_DISMISS_DISABLED = 0xFF2A2620;
@@ -871,7 +872,11 @@ public final class RosterScreen extends Screen {
             // Revival-pending pets are dead; not-loaded pets are already stored.
             boolean dismissDisabled = ClientRosterData.isRevivalPending(bond) || !bond.loaded();
             boolean dismissHover = !dismissDisabled && inBox(mx, my, dismissX, btnY, dismissW, btnH);
-            boolean breakHover = inBox(mx, my, breakSmallX, btnY, breakSmallW, btnH);
+            // Break is gated on revival too: the whole row quiets down together
+            // while a dead pet is respawning, matching the server gate in
+            // HoldEligibility.checkBreak.
+            boolean breakDisabled = ClientRosterData.isRevivalPending(bond);
+            boolean breakHover = !breakDisabled && inBox(mx, my, breakSmallX, btnY, breakSmallW, btnH);
 
             int dismissColor = dismissDisabled
                     ? C_BTN_DISMISS_DISABLED
@@ -883,9 +888,15 @@ public final class RosterScreen extends Screen {
                     dismissHoldProgress,
                     dismissTextColor);
 
+            int breakColor = breakDisabled
+                    ? C_BTN_BREAK_DISABLED
+                    : (breakHover ? C_BTN_BREAK_HOVER : C_BTN_BREAK);
+            int breakTextColor = breakDisabled ? C_BTN_TEXT_DISABLED : C_TEXT;
             drawButton(g, breakSmallX, btnY, breakSmallW, btnH,
                     Component.literal("X"),
-                    breakHover ? C_BTN_BREAK_HOVER : C_BTN_BREAK);
+                    breakColor,
+                    0F,
+                    breakTextColor);
         }
     }
 
@@ -1112,6 +1123,10 @@ public final class RosterScreen extends Screen {
                     return true;
                 }
                 if (inBox(mx, my, breakSmallX, btnY, breakSmallW, btnH)) {
+                    // Don't arm the confirm flow during revival — the server gate
+                    // would deny the eventual hold anyway, and arming would put
+                    // the row into a confusing half-state with no path forward.
+                    if (ClientRosterData.isRevivalPending(bond)) return true;
                     breakArmedBondId = bond.bondId();
                     breakArmedExpiresAt = now + BREAK_CONFIRM_TTL_MS;
                     return true;

@@ -27,7 +27,6 @@ import net.silvertide.kindred.network.packet.C2SCancelHold;
 import net.silvertide.kindred.network.packet.C2SCheckBindCandidate;
 import net.silvertide.kindred.network.packet.C2SClaimEntity;
 import net.silvertide.kindred.network.packet.C2SOpenRoster;
-import net.silvertide.kindred.network.packet.C2SRenameBond;
 import net.silvertide.kindred.network.packet.C2SReorderBond;
 import net.silvertide.kindred.network.packet.C2SRequestHold;
 import net.silvertide.kindred.network.packet.C2SSetActivePet;
@@ -103,6 +102,7 @@ public final class RosterScreen extends Screen {
     private static final int C_BTN_CLAIM = 0xFF3D5C8A;
     private static final int C_BTN_CLAIM_HOVER = 0xFF5278B0;
     private static final int C_STAR_ACTIVE = 0xFFE7B43B;
+    private static final int C_RENAME_EDIT_TEXT = 0xFFE7B43B;
     private static final int C_STAR_INACTIVE = 0xFF4A5260;
     private static final int C_STAR_HOVER = 0xFF8A95A8;
     /** Radial cooldown indicator: light wedge that drains counter-clockwise as
@@ -129,7 +129,6 @@ public final class RosterScreen extends Screen {
      *  the panel, so the right side is empty). Pushes both the entity render and
      *  the stacked buttons further down. */
     private static final int PREVIEW_BTM_EXTEND = 14;
-    private static final int MAX_NAME_LEN = 32;
 
     private int leftPos;
     private int topPos;
@@ -173,9 +172,7 @@ public final class RosterScreen extends Screen {
      *  pet on open; clicking a row body switches it. */
     private UUID selectedBondId = null;
 
-    /** When non-null, that row's name is in inline-edit mode. */
-    private UUID renamingBondId = null;
-    private String renameBuffer = "";
+    private final RenameEditor renameEditor = new RenameEditor();
 
     /** Snapshotted at {@link #init()} only — never updated while the screen is open.
      *  Server enforces distance on the actual bind packet. */
@@ -420,10 +417,10 @@ public final class RosterScreen extends Screen {
 
         // Rename button (middle) — hidden when allowRename is false.
         if (allowRename) {
-            boolean editingThis = selected.bondId().equals(renamingBondId);
+            boolean editingThis = renameEditor.isEditingBond(selected.bondId());
             boolean renameHover = !editingThis && inBox(mouseX, mouseY, btnX, renameBtnY, btnW, ACTION_BTN_H);
             int renameColor = editingThis
-                    ? C_BTN_CLAIM_HOVER  // brighter while in edit mode to signal active state
+                    ? C_BTN_CLAIM_HOVER
                     : (renameHover ? C_BTN_CLAIM_HOVER : C_BTN_CLAIM);
             drawButton(g, font, btnX, renameBtnY, btnW, ACTION_BTN_H,
                     Component.translatable("kindred.screen.rename"), renameColor);
@@ -756,11 +753,10 @@ public final class RosterScreen extends Screen {
         int textX = x + STAR_COL_W + 4;
         String name;
         int nameColor = C_TEXT;
-        if (bond.bondId().equals(renamingBondId)) {
-            // Inline edit: show the buffer plus a blinking caret.
+        if (renameEditor.isEditingBond(bond.bondId())) {
             boolean caretVisible = (System.currentTimeMillis() / 500L) % 2L == 0L;
-            name = renameBuffer + (caretVisible ? "_" : " ");
-            nameColor = 0xFFE7B43B;  // gold tint while editing
+            name = renameEditor.editBuffer() + (caretVisible ? "_" : " ");
+            nameColor = C_RENAME_EDIT_TEXT;
         } else {
             name = bond.displayName().orElseGet(() -> entityTypeName(bond).getString());
         }
@@ -962,14 +958,14 @@ public final class RosterScreen extends Screen {
 
             if (inBox(mxAll, myAll, btnX, moveBtnY(), moveHalfW, ACTION_BTN_H)) {
                 if (bondIdx > 0) {
-                    if (renamingBondId != null) commitRename();
+                    renameEditor.commitEditing();
                     PacketDistributor.sendToServer(new C2SReorderBond(selectedView.bondId(), -1));
                 }
                 return true;
             }
             if (inBox(mxAll, myAll, moveDownX, moveBtnY(), moveDownW, ACTION_BTN_H)) {
                 if (bondIdx >= 0 && bondIdx < bonds.size() - 1) {
-                    if (renamingBondId != null) commitRename();
+                    renameEditor.commitEditing();
                     PacketDistributor.sendToServer(new C2SReorderBond(selectedView.bondId(), 1));
                 }
                 return true;
@@ -977,21 +973,20 @@ public final class RosterScreen extends Screen {
 
             if (Config.ALLOW_RENAME.get()
                     && inBox(mxAll, myAll, btnX, renameBtnY(), btnW, ACTION_BTN_H)) {
-                if (renamingBondId != null) commitRename();
-                startRename(selectedView);
+                renameEditor.commitEditing();
+                renameEditor.startEditing(selectedView);
                 return true;
             }
 
             if (!selectedView.isActive()
                     && inBox(mxAll, myAll, btnX, setActiveBtnY(), btnW, ACTION_BTN_H)) {
-                if (renamingBondId != null) commitRename();
+                renameEditor.commitEditing();
                 PacketDistributor.sendToServer(new C2SSetActivePet(Optional.of(selectedView.bondId())));
                 return true;
             }
         }
 
-        // Any other click: commit in-progress rename before continuing.
-        if (renamingBondId != null) commitRename();
+        renameEditor.commitEditing();
 
         List<BondView> bonds = ClientRosterData.bonds();
         for (int i = 0; i < bonds.size(); i++) {
@@ -1076,57 +1071,14 @@ public final class RosterScreen extends Screen {
 
     @Override
     public boolean charTyped(char codePoint, int modifiers) {
-        if (renamingBondId == null) return super.charTyped(codePoint, modifiers);
-        if (codePoint == '§' || Character.isISOControl(codePoint)) return true;
-        if (renameBuffer.length() < MAX_NAME_LEN) {
-            renameBuffer = renameBuffer + codePoint;
-        }
-        return true;
+        if (renameEditor.tryHandleCharTyped(codePoint)) return true;
+        return super.charTyped(codePoint, modifiers);
     }
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        if (renamingBondId != null) {
-            // Enter (257) / Numpad Enter (335) → commit.
-            if (keyCode == 257 || keyCode == 335) {
-                commitRename();
-                return true;
-            }
-            // Escape (256) → cancel without saving.
-            if (keyCode == 256) {
-                cancelRename();
-                return true;
-            }
-            // Backspace (259) → delete last char.
-            if (keyCode == 259) {
-                if (!renameBuffer.isEmpty()) {
-                    renameBuffer = renameBuffer.substring(0, renameBuffer.length() - 1);
-                }
-                return true;
-            }
-            // Swallow other keys so we don't trigger global keybinds while editing.
-            return true;
-        }
+        if (renameEditor.tryHandleKeyPressed(keyCode)) return true;
         return super.keyPressed(keyCode, scanCode, modifiers);
-    }
-
-    private void startRename(BondView bond) {
-        renamingBondId = bond.bondId();
-        renameBuffer = bond.displayName().orElse("");
-    }
-
-    private void commitRename() {
-        if (renamingBondId == null) return;
-        String trimmed = renameBuffer.trim();
-        Optional<String> newName = trimmed.isEmpty() ? Optional.empty() : Optional.of(trimmed);
-        PacketDistributor.sendToServer(new C2SRenameBond(renamingBondId, newName));
-        renamingBondId = null;
-        renameBuffer = "";
-    }
-
-    private void cancelRename() {
-        renamingBondId = null;
-        renameBuffer = "";
     }
 
     /**

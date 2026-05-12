@@ -36,6 +36,15 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import static net.silvertide.kindred.client.screen.ScreenDrawUtil.dimensionName;
+import static net.silvertide.kindred.client.screen.ScreenDrawUtil.drawBorder;
+import static net.silvertide.kindred.client.screen.ScreenDrawUtil.drawButton;
+import static net.silvertide.kindred.client.screen.ScreenDrawUtil.drawRadialSweep;
+import static net.silvertide.kindred.client.screen.ScreenDrawUtil.drawStar;
+import static net.silvertide.kindred.client.screen.ScreenDrawUtil.entityTypeName;
+import static net.silvertide.kindred.client.screen.ScreenDrawUtil.formatDurationCoarse;
+import static net.silvertide.kindred.client.screen.ScreenDrawUtil.inBox;
+
 /**
  * Roster screen with two-column layout: row list on the left, entity preview pane on
  * the right. Clicking anywhere on a row body (not on a button/star) selects it,
@@ -402,10 +411,10 @@ public final class RosterScreen extends Screen {
         int moveDownColor = !canMoveDown
                 ? C_BTN_DISMISS_DISABLED
                 : (moveDownHover ? C_BTN_CLAIM_HOVER : C_BTN_CLAIM);
-        drawButton(g, moveUpX, moveBtnY, moveHalfW, ACTION_BTN_H,
+        drawButton(g, font, moveUpX, moveBtnY, moveHalfW, ACTION_BTN_H,
                 Component.translatable("kindred.screen.move_up"),
                 moveUpColor, 0F, canMoveUp ? C_TEXT : C_BTN_TEXT_DISABLED);
-        drawButton(g, moveDownX, moveBtnY, moveDownW, ACTION_BTN_H,
+        drawButton(g, font, moveDownX, moveBtnY, moveDownW, ACTION_BTN_H,
                 Component.translatable("kindred.screen.move_down"),
                 moveDownColor, 0F, canMoveDown ? C_TEXT : C_BTN_TEXT_DISABLED);
 
@@ -416,7 +425,7 @@ public final class RosterScreen extends Screen {
             int renameColor = editingThis
                     ? C_BTN_CLAIM_HOVER  // brighter while in edit mode to signal active state
                     : (renameHover ? C_BTN_CLAIM_HOVER : C_BTN_CLAIM);
-            drawButton(g, btnX, renameBtnY, btnW, ACTION_BTN_H,
+            drawButton(g, font, btnX, renameBtnY, btnW, ACTION_BTN_H,
                     Component.translatable("kindred.screen.rename"), renameColor);
         }
 
@@ -429,7 +438,7 @@ public final class RosterScreen extends Screen {
         int setActiveColor = isActive
                 ? C_STAR_ACTIVE
                 : (setActiveHover ? C_BTN_CLAIM_HOVER : C_BTN_CLAIM);
-        drawButton(g, btnX, setActiveBtnY, btnW, ACTION_BTN_H, setActiveLabel, setActiveColor);
+        drawButton(g, font, btnX, setActiveBtnY, btnW, ACTION_BTN_H, setActiveLabel, setActiveColor);
     }
 
     private int previewBottom() {
@@ -479,7 +488,7 @@ public final class RosterScreen extends Screen {
             boolean hover = inBox(mouseX, mouseY, claimBtnX, btnY, claimBtnW, CLAIM_BTN_H);
             String typeName = BuiltInRegistries.ENTITY_TYPE.getKey(candidate.getType()).getPath();
             Component label = Component.translatable("kindred.screen.bind", typeName);
-            drawButton(g, claimBtnX, btnY, claimBtnW, CLAIM_BTN_H, label,
+            drawButton(g, font, claimBtnX, btnY, claimBtnW, CLAIM_BTN_H, label,
                     hover ? C_BTN_CLAIM_HOVER : C_BTN_CLAIM,
                     bindHoldProgress());
             return;
@@ -850,7 +859,7 @@ public final class RosterScreen extends Screen {
             summonLabel = Component.translatable("kindred.screen.summon");
         }
         int summonTextColor = summonDisabled ? C_BTN_TEXT_DISABLED : C_TEXT;
-        drawButton(g, summonX, btnY, summonW, btnH,
+        drawButton(g, font, summonX, btnY, summonW, btnH,
                 summonLabel,
                 summonColor,
                 summonHoldProgress,
@@ -872,7 +881,7 @@ public final class RosterScreen extends Screen {
             int confirmX = dismissX;
             int confirmW = rightEdge - confirmX;
             boolean confirmHover = inBox(mx, my, confirmX, btnY, confirmW, btnH);
-            drawButton(g, confirmX, btnY, confirmW, btnH,
+            drawButton(g, font, confirmX, btnY, confirmW, btnH,
                     Component.translatable("kindred.screen.break_confirm"),
                     confirmHover ? C_BTN_BREAK_CONFIRM : C_BTN_BREAK_HOVER,
                     breakHoldProgress);
@@ -891,7 +900,7 @@ public final class RosterScreen extends Screen {
                     ? C_BTN_DISMISS_DISABLED
                     : (dismissHover ? C_BTN_DISMISS_HOVER : C_BTN_DISMISS);
             int dismissTextColor = dismissDisabled ? C_BTN_TEXT_DISABLED : C_TEXT;
-            drawButton(g, dismissX, btnY, dismissW, btnH,
+            drawButton(g, font, dismissX, btnY, dismissW, btnH,
                     Component.translatable("kindred.screen.dismiss"),
                     dismissColor,
                     dismissHoldProgress,
@@ -901,98 +910,12 @@ public final class RosterScreen extends Screen {
                     ? C_BTN_BREAK_DISABLED
                     : (breakHover ? C_BTN_BREAK_HOVER : C_BTN_BREAK);
             int breakTextColor = breakDisabled ? C_BTN_TEXT_DISABLED : C_TEXT;
-            drawButton(g, breakSmallX, btnY, breakSmallW, btnH,
+            drawButton(g, font, breakSmallX, btnY, breakSmallW, btnH,
                     Component.literal("X"),
                     breakColor,
                     0F,
                     breakTextColor);
         }
-    }
-
-    /**
-     * Vanilla-style display name for the bond's entity type, e.g. "Horse" instead of
-     * "minecraft:horse". Falls back to the raw resource path when the type isn't in
-     * the registry on the client (modded type from a server we don't have the mod for).
-     */
-    private static Component entityTypeName(BondView bond) {
-        var type = BuiltInRegistries.ENTITY_TYPE.get(bond.entityType());
-        return type != null ? type.getDescription() : Component.literal(bond.entityType().getPath());
-    }
-
-    /**
-     * Pretty dimension name. Looks up {@code kindred.dim.<ns>.<path>}; falls back to
-     * a capitalized, underscore-stripped version of the resource path so modded
-     * dimensions still read reasonably without us shipping every translation.
-     */
-    private static Component dimensionName(net.minecraft.resources.ResourceLocation dim) {
-        String key = "kindred.dim." + dim.getNamespace() + "." + dim.getPath();
-        return Component.translatableWithFallback(key, prettifyPath(dim.getPath()));
-    }
-
-    private static String prettifyPath(String path) {
-        if (path.isEmpty()) return path;
-        StringBuilder sb = new StringBuilder(path.length());
-        boolean nextUpper = true;
-        for (int i = 0; i < path.length(); i++) {
-            char c = path.charAt(i);
-            if (c == '_') {
-                sb.append(' ');
-                nextUpper = true;
-            } else if (nextUpper) {
-                sb.append(Character.toUpperCase(c));
-                nextUpper = false;
-            } else {
-                sb.append(c);
-            }
-        }
-        return sb.toString();
-    }
-
-    /**
-     * Coarse human-readable duration: "1h 5m", "5m 30s", or "30s". Rounds up so a
-     * sub-second residual still reads as "1s" instead of "0s".
-     */
-    private static String formatDurationCoarse(long ms) {
-        long totalSeconds = (ms + 999L) / 1000L;
-        long hours = totalSeconds / 3600L;
-        long minutes = (totalSeconds % 3600L) / 60L;
-        long seconds = totalSeconds % 60L;
-        if (hours > 0) return hours + "h " + minutes + "m";
-        if (minutes > 0) return minutes + "m " + seconds + "s";
-        return seconds + "s";
-    }
-
-    /**
-     * Clock-style radial cooldown indicator centered at (cx, cy). The wedge fills the
-     * full circle at {@code progress = 1} and shrinks counter-clockwise to nothing as
-     * the cooldown elapses (matching MOBA-style ability cooldown convention).
-     *
-     * <p>Implemented by sampling each pixel in the bounding square and filling the ones
-     * inside the disc that fall within the wedge. Cheap at small radii (≤ ~8 px).</p>
-     */
-    private static void drawRadialSweep(GuiGraphics g, int cx, int cy, int radius, float progress, int color) {
-        int r2 = radius * radius;
-        double sweepRad = progress * Math.PI * 2.0;
-        for (int dy = -radius; dy <= radius; dy++) {
-            for (int dx = -radius; dx <= radius; dx++) {
-                if (dx * dx + dy * dy > r2) continue;
-                // Angle from 12 o'clock, increasing clockwise. atan2(dx, -dy) gives
-                // -PI..PI with 0 = up, positive = right; shift to 0..2PI.
-                double angle = Math.atan2(dx, -dy);
-                if (angle < 0) angle += Math.PI * 2.0;
-                if (angle > sweepRad) continue;
-                g.fill(cx + dx, cy + dy, cx + dx + 1, cy + dy + 1, color);
-            }
-        }
-    }
-
-    /** 5x5 procedural diamond ("star" stand-in), centered at (cx, cy). */
-    private static void drawStar(GuiGraphics g, int cx, int cy, int color) {
-        g.fill(cx,     cy - 2, cx + 1, cy - 1, color);
-        g.fill(cx - 1, cy - 1, cx + 2, cy,     color);
-        g.fill(cx - 2, cy,     cx + 3, cy + 1, color);
-        g.fill(cx - 1, cy + 1, cx + 2, cy + 2, color);
-        g.fill(cx,     cy + 2, cx + 1, cy + 3, color);
     }
 
     @Override
@@ -1259,31 +1182,4 @@ public final class RosterScreen extends Screen {
         return false;
     }
 
-    private static void drawBorder(GuiGraphics g, int x, int y, int w, int h, int color) {
-        g.fill(x, y, x + w, y + 1, color);
-        g.fill(x, y + h - 1, x + w, y + h, color);
-        g.fill(x, y, x + 1, y + h, color);
-        g.fill(x + w - 1, y, x + w, y + h, color);
-    }
-
-    private void drawButton(GuiGraphics g, int x, int y, int w, int h, Component label, int color) {
-        drawButton(g, x, y, w, h, label, color, 0F, C_TEXT);
-    }
-
-    private void drawButton(GuiGraphics g, int x, int y, int w, int h, Component label, int color, float holdProgress) {
-        drawButton(g, x, y, w, h, label, color, holdProgress, C_TEXT);
-    }
-
-    private void drawButton(GuiGraphics g, int x, int y, int w, int h, Component label, int color, float holdProgress, int textColor) {
-        g.fill(x, y, x + w, y + h, color);
-        if (holdProgress > 0F) {
-            int fillW = Math.max(1, (int) (w * holdProgress));
-            g.fill(x, y, x + fillW, y + h, 0x66FFFFFF);
-        }
-        g.drawCenteredString(font, label, x + w / 2, y + (h - font.lineHeight) / 2 + 1, textColor);
-    }
-
-    private static boolean inBox(int x, int y, int bx, int by, int bw, int bh) {
-        return x >= bx && x < bx + bw && y >= by && y < by + bh;
-    }
 }

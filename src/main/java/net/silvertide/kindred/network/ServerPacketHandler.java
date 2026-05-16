@@ -100,8 +100,6 @@ public final class ServerPacketHandler {
             }
             ClaimResult result = BondService.tryClaim(player, target);
             if (result == ClaimResult.CLAIMED) {
-                player.sendSystemMessage(Component.translatable(
-                        "kindred.bind.success", target.getType().getDescription()));
                 sendRosterSync(player);
             } else {
                 player.sendSystemMessage(claimDenyMessage(result));

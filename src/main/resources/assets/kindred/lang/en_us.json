@@ -54,6 +54,5 @@
   "kindred.dismiss.not_loaded": "Pet isn't loaded in the world",
   "kindred.dismiss.reviving": "Pet is respawning",
   "kindred.break.no_such_bond": "That bond no longer exists",
-  "kindred.break.reviving": "Pet is respawning",
-  "kindred.bind.success": "Bonded with %s"
+  "kindred.break.reviving": "Pet is respawning"
 }

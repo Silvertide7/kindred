@@ -1,11 +1,8 @@
 package net.silvertide.kindred.bond;
 
-import net.minecraft.core.BlockPos;
-import net.minecraft.core.Direction;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.tags.FluidTags;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
@@ -14,7 +11,6 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.entity.Entity;
-import net.minecraft.world.entity.EntityDimensions;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
@@ -23,11 +19,7 @@ import net.minecraft.world.entity.Saddleable;
 import net.minecraft.world.entity.TamableAnimal;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.level.block.CampfireBlock;
-import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.portal.DimensionTransition;
-import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.common.NeoForge;
 import net.silvertide.kindred.Kindred;
@@ -46,9 +38,6 @@ import net.silvertide.kindred.data.KindredSavedData;
 import net.silvertide.kindred.registry.ModAttachments;
 import net.silvertide.kindred.registry.ModTags;
 
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -232,12 +221,6 @@ public final class BondService {
         return Optional.empty();
     }
 
-    /**
-     * True if the bond is in its post-death revival cooldown window. Returns
-     * false when there's no death timestamp or when revival cooldowns are
-     * disabled by config. Shared between {@link #checkSummonGate} and the
-     * dismiss/break eligibility checks in {@code HoldEligibility}.
-     */
     public static boolean isRevivalPending(Bond bond) {
         if (bond.diedAt().isEmpty()) return false;
         long revivalCooldownMs = Config.revivalCooldownMs();
@@ -249,10 +232,9 @@ public final class BondService {
         Optional<SummonResult> gateFailure = checkSummonGate(player, bondId);
         if (gateFailure.isPresent()) return gateFailure.get();
 
-        // checkSummonGate guarantees the bond exists, so this is safe.
         Bond bond = player.getData(ModAttachments.BOND_ROSTER.get()).get(bondId).orElseThrow();
 
-        if (Config.REQUIRE_SPACE.get() && !isPlayerGrounded(player)) return SummonResult.PLAYER_AIRBORNE;
+        if (Config.REQUIRE_SPACE.get() && !BondSpawnLocator.isPlayerGrounded(player)) return SummonResult.PLAYER_AIRBORNE;
 
         ServerLevel playerLevel = (ServerLevel) player.level();
         KindredSavedData saved = KindredSavedData.get(playerLevel);
@@ -298,7 +280,7 @@ public final class BondService {
     private static SummonResult teleportSameDim(ServerPlayer player, Entity old, Bond bond, ServerLevel level, KindredSavedData saved) {
         UUID bondId = bond.bondId();
 
-        Optional<Vec3> found = findSpawnLocation(level, player, old.getType().getDimensions());
+        Optional<Vec3> found = BondSpawnLocator.findSpawnLocation(level, player, old.getType().getDimensions());
         if (found.isEmpty() && Config.REQUIRE_SPACE.get()) return SummonResult.NO_SPACE;
         Vec3 spawnPos = found.orElse(player.position());
 
@@ -331,7 +313,7 @@ public final class BondService {
 
         Vec3 spawnPos;
         if (Config.REQUIRE_SPACE.get()) {
-            Optional<Vec3> found = findSpawnLocation(targetLevel, player, old.getType().getDimensions());
+            Optional<Vec3> found = BondSpawnLocator.findSpawnLocation(targetLevel, player, old.getType().getDimensions());
             if (found.isEmpty()) return SummonResult.NO_SPACE;
             spawnPos = found.get();
         } else {
@@ -399,7 +381,7 @@ public final class BondService {
         // Find a valid spawn pocket within 5x5 of the player; snap to ground.
         Vec3 spawnPos;
         if (Config.REQUIRE_SPACE.get()) {
-            Optional<Vec3> found = findSpawnLocation(targetLevel, player, type.getDimensions());
+            Optional<Vec3> found = BondSpawnLocator.findSpawnLocation(targetLevel, player, type.getDimensions());
             if (found.isEmpty()) return SummonResult.NO_SPACE;
             spawnPos = found.get();
         } else {
@@ -498,109 +480,6 @@ public final class BondService {
         BondRoster roster = player.getData(ModAttachments.BOND_ROSTER.get());
         Bond updated = bond.withLastSummonedAt(System.currentTimeMillis()).withDiedAt(Optional.empty());
         player.setData(ModAttachments.BOND_ROSTER.get(), roster.with(updated));
-    }
-
-    private static boolean isPlayerGrounded(ServerPlayer player) {
-        if (player.onGround()) return true;
-        if (Config.ALLOW_WATER_SUMMON.get() && player.isInWater()) return true;
-        Level level = player.level();
-        BlockPos feet = player.blockPosition();
-        for (int dy = 0; dy <= 2; dy++) {
-            BlockPos check = feet.below(dy);
-            BlockState state = level.getBlockState(check);
-            if (state.isFaceSturdy(level, check, Direction.UP)) return true;
-        }
-        return false;
-    }
-
-    private static Optional<Vec3> findSpawnLocation(ServerLevel level, ServerPlayer player, EntityDimensions dims) {
-        BlockPos pp = player.blockPosition();
-
-        float yawRad = player.getYRot() * (float) (Math.PI / 180.0);
-        double fx = -Math.sin(yawRad);
-        double fz = Math.cos(yawRad);
-
-        record SpawnLocationCandidate(int dx, int dz, double score) {}
-        List<SpawnLocationCandidate> ranked = new ArrayList<>(24);
-
-        for (int dx = -2; dx <= 2; dx++) {
-            for (int dz = -2; dz <= 2; dz++) {
-                if (dx == 0 && dz == 0) continue;
-                double forwardness = dx * fx + dz * fz;
-                double lateral = Math.abs(dx * fz - dz * fx);
-                double dist = Math.sqrt(dx * dx + dz * dz);
-                ranked.add(new SpawnLocationCandidate(dx, dz, forwardness - 0.2 * lateral + 0.05 * dist));
-            }
-        }
-        ranked.sort(Comparator.comparingDouble(SpawnLocationCandidate::score).reversed());
-
-        for (SpawnLocationCandidate candidate : ranked) {
-            Optional<Vec3> spot = tryColumn(level, pp.offset(candidate.dx, 0, candidate.dz), dims, false);
-            if (spot.isPresent()) return spot;
-        }
-        Optional<Vec3> dryOnPlayer = tryColumn(level, pp, dims, false);
-        if (dryOnPlayer.isPresent()) return dryOnPlayer;
-
-        for (SpawnLocationCandidate c : ranked) {
-            Optional<Vec3> spot = tryColumn(level, pp.offset(c.dx, 0, c.dz), dims, true);
-            if (spot.isPresent()) return spot;
-        }
-        Optional<Vec3> wetOnPlayer = tryColumn(level, pp, dims, true);
-        if (wetOnPlayer.isPresent()) return wetOnPlayer;
-
-        if (Config.ALLOW_WATER_SUMMON.get() && player.isInWater()) {
-            return Optional.of(player.position());
-        }
-        return Optional.empty();
-    }
-
-    private static Optional<Vec3> tryColumn(ServerLevel level, BlockPos start, EntityDimensions dims, boolean allowWater) {
-        int minY = level.getMinBuildHeight();
-        int maxY = level.getMaxBuildHeight();
-
-        for (int dy = -1; dy <= 3; dy++) {
-            int feetY = start.getY() - dy;
-            if (feetY <= minY || feetY >= maxY) continue;
-            BlockPos top = new BlockPos(start.getX(), feetY, start.getZ());
-            BlockPos floor = top.below();
-            BlockState floorState = level.getBlockState(floor);
-            if (!floorState.isFaceSturdy(level, floor, Direction.UP)) continue;
-            if (isHazardousFloor(floorState)) return Optional.empty();
-            AABB box = dims.makeBoundingBox(top.getX() + 0.5D, top.getY(), top.getZ() + 0.5D);
-            if (!level.noCollision(box)) return Optional.empty();
-            if (hasLavaInOrNear(level, box)) return Optional.empty();
-            if (!allowWater && hasFluidInPocket(level, box, FluidTags.WATER)) return Optional.empty();
-            return Optional.of(new Vec3(top.getX() + 0.5D, top.getY(), top.getZ() + 0.5D));
-        }
-        return Optional.empty();
-    }
-
-    private static boolean isHazardousFloor(BlockState state) {
-        var block = state.getBlock();
-        if (block == Blocks.MAGMA_BLOCK) return true;
-        if (block == Blocks.FIRE || block == Blocks.SOUL_FIRE) return true;
-        if ((block == Blocks.CAMPFIRE || block == Blocks.SOUL_CAMPFIRE)
-                && state.getValue(CampfireBlock.LIT)) return true;
-        return false;
-    }
-
-    private static boolean hasLavaInOrNear(ServerLevel level, AABB box) {
-        AABB scan = box.inflate(1.0D, 0.5D, 1.0D);
-        BlockPos min = BlockPos.containing(scan.minX, scan.minY, scan.minZ);
-        BlockPos max = BlockPos.containing(scan.maxX - 1.0E-7D, scan.maxY - 1.0E-7D, scan.maxZ - 1.0E-7D);
-        for (BlockPos p : BlockPos.betweenClosed(min, max)) {
-            if (level.getFluidState(p).is(FluidTags.LAVA)) return true;
-        }
-        return false;
-    }
-
-    private static boolean hasFluidInPocket(ServerLevel level, AABB box, net.minecraft.tags.TagKey<net.minecraft.world.level.material.Fluid> fluidTag) {
-        BlockPos min = BlockPos.containing(box.minX, box.minY, box.minZ);
-        BlockPos max = BlockPos.containing(box.maxX - 1.0E-7D, box.maxY - 1.0E-7D, box.maxZ - 1.0E-7D);
-        for (BlockPos p : BlockPos.betweenClosed(min, max)) {
-            if (level.getFluidState(p).is(fluidTag)) return true;
-        }
-        return false;
     }
 
     private BondService() {}

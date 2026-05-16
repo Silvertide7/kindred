@@ -12,15 +12,6 @@ import net.silvertide.kindred.attachment.Bond;
 import java.util.Optional;
 import java.util.UUID;
 
-/**
- * Compact server-to-client representation of a bond. Carries the snapshot NBT so the
- * client can render a faithful preview of the bonded entity (correct variant,
- * equipment, age, custom name) without an extra request/response round-trip.
- *
- * <p>{@code entityUUID} is extracted from the snapshot for client-side proximity
- * checks (hold-to-dismiss). {@code cooldownRemainingMs} is computed at send time and
- * the client measures elapsed since receive — bypasses any clock skew.</p>
- */
 public record BondView(
         UUID bondId,
         UUID entityUUID,

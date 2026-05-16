@@ -6,12 +6,12 @@ import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 import net.silvertide.kindred.Kindred;
 
-public record C2SSummonByKeybind() implements CustomPacketPayload {
-    public static final Type<C2SSummonByKeybind> TYPE = new Type<>(
-            ResourceLocation.fromNamespaceAndPath(Kindred.MODID, "c2s_summon_by_keybind"));
+public record C2SCancelHold() implements CustomPacketPayload {
+    public static final Type<C2SCancelHold> TYPE = new Type<>(
+            ResourceLocation.fromNamespaceAndPath(Kindred.MODID, "c2s_cancel_hold"));
 
-    public static final StreamCodec<ByteBuf, C2SSummonByKeybind> STREAM_CODEC =
-            StreamCodec.unit(new C2SSummonByKeybind());
+    public static final StreamCodec<ByteBuf, C2SCancelHold> STREAM_CODEC =
+            StreamCodec.unit(new C2SCancelHold());
 
     @Override
     public Type<? extends CustomPacketPayload> type() {

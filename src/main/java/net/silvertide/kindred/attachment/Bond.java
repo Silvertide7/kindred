@@ -13,13 +13,6 @@ import net.minecraft.world.phys.Vec3;
 import java.util.Optional;
 import java.util.UUID;
 
-/**
- * @param dismissed True only when the pet was dismissed via the screen and the live
- *                  entity was discarded — meaning only the snapshot exists. False when
- *                  the entity exists in some chunk (loaded or unloaded). Distinguishes
- *                  "snapshot-only" from "in unloaded chunk somewhere" since both look
- *                  identical to {@code BondIndex.find()}.
- */
 public record Bond(
         UUID bondId,
         ResourceLocation entityType,

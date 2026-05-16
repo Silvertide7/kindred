@@ -9,11 +9,6 @@ import net.silvertide.kindred.Kindred;
 
 import java.util.UUID;
 
-/**
- * Client asks the server "can I bind this entity?" so the screen can hide the
- * Bind button for entities the client can't fully validate locally — chiefly
- * {@code AbstractHorse}, which doesn't sync owner UUID to the client.
- */
 public record C2SCheckBindCandidate(UUID entityUUID) implements CustomPacketPayload {
     public static final Type<C2SCheckBindCandidate> TYPE = new Type<>(
             ResourceLocation.fromNamespaceAndPath(Kindred.MODID, "c2s_check_bind_candidate"));

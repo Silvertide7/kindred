@@ -11,10 +11,6 @@ import net.silvertide.kindred.Kindred;
 import java.util.Optional;
 import java.util.UUID;
 
-/**
- * Empty bondId clears the active pet. Present sets the active pet to that bondId
- * (server validates the bondId exists in the player's roster).
- */
 public record C2SSetActivePet(Optional<UUID> bondId) implements CustomPacketPayload {
     public static final Type<C2SSetActivePet> TYPE = new Type<>(
             ResourceLocation.fromNamespaceAndPath(Kindred.MODID, "c2s_set_active_pet"));

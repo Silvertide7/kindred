@@ -11,14 +11,6 @@ import net.silvertide.kindred.Kindred;
 import java.util.Optional;
 import java.util.UUID;
 
-/**
- * Server's verdict on whether the given entity is bindable for the requesting
- * player. The {@code entityUUID} echoes the request so a stale response can't
- * flip a button for a different candidate. When {@code canBind} is false,
- * {@code denyMessageKey} optionally carries a translation key explaining why,
- * which the screen renders in place of the generic bind hint. Empty key with
- * {@code canBind=false} = silent rejection (e.g. entity too far / not found).
- */
 public record S2CBindCandidateResult(
         UUID entityUUID,
         boolean canBind,

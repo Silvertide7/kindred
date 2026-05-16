@@ -5,15 +5,8 @@ import net.silvertide.kindred.compat.pmmo.PmmoMode;
 
 public final class Config {
     private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
+    private Config() {}
 
-    // Each group is bracketed by static initializer blocks calling push/pop on the
-    // builder. Java executes static blocks and static-field initializers in textual
-    // order (JLS 12.4.2), so the field initializers below land inside the active
-    // category. Entries after the first in each section get a leading "" comment
-    // line to give the generated TOML a bare "#" between configs — the closest we
-    // can get to visual separation without writing the TOML by hand.
-
-    // ───── Bonding & roster ─────
     static { BUILDER.push("bonding"); }
 
     public static final ModConfigSpec.IntValue MAX_BONDS = BUILDER
@@ -33,9 +26,14 @@ public final class Config {
                      "is below the cost.")
             .defineInRange("bondXpLevelCost", 0, 0, 1000);
 
+    public static final ModConfigSpec.BooleanValue ALLOW_RENAME = BUILDER
+            .comment("",
+                     "If true (default), players can rename their bonded pets via the roster screen. " +
+                     "If false, the Rename button is hidden and rename packets are rejected server-side.")
+            .define("allowRename", true);
+
     static { BUILDER.pop(); }
 
-    // ───── Summoning behavior ─────
     static { BUILDER.push("summoning"); }
 
     public static final ModConfigSpec.DoubleValue WALK_RANGE = BUILDER
@@ -68,22 +66,20 @@ public final class Config {
 
     static { BUILDER.pop(); }
 
-    // ───── Cooldowns ─────
     static { BUILDER.push("cooldowns"); }
 
-    public static final ModConfigSpec.IntValue SUMMON_COOLDOWN_TICKS = BUILDER
-            .comment("Cooldown between summons of the same bond, in ticks (20 = 1 second).")
-            .defineInRange("summonCooldownTicks", 100, 0, 72000);
+    public static final ModConfigSpec.IntValue SUMMON_COOLDOWN_SECONDS = BUILDER
+            .comment("Cooldown between summons of the same bond, in seconds.")
+            .defineInRange("summonCooldownSeconds", 5, 0, 3600);
 
     public static final ModConfigSpec.IntValue SUMMON_GLOBAL_COOLDOWN_SECONDS = BUILDER
             .comment("",
                      "Per-player cooldown (in seconds) between any two summons regardless of which bond. " +
-                     "0 disables. Distinct from summonCooldownTicks which only blocks summoning the same pet repeatedly.")
+                     "0 disables. Distinct from summonCooldownSeconds which only blocks summoning the same pet repeatedly.")
             .defineInRange("summonGlobalCooldownSeconds", 10, 0, 86400);
 
     static { BUILDER.pop(); }
 
-    // ───── Death & revival ─────
     static { BUILDER.push("death"); }
 
     public static final ModConfigSpec.BooleanValue DEATH_IS_PERMANENT = BUILDER
@@ -109,7 +105,6 @@ public final class Config {
 
     static { BUILDER.pop(); }
 
-    // ───── Input (hold-to-confirm) ─────
     static { BUILDER.push("input"); }
 
     public static final ModConfigSpec.DoubleValue HOLD_TO_SUMMON_SECONDS = BUILDER
@@ -128,7 +123,6 @@ public final class Config {
 
     static { BUILDER.pop(); }
 
-    // ───── PMMO compat (Project MMO) ─────
     static { BUILDER.push("pmmo"); }
 
     public static final ModConfigSpec.BooleanValue PMMO_ENABLED = BUILDER
@@ -163,15 +157,21 @@ public final class Config {
 
     public static final ModConfigSpec SPEC = BUILDER.build();
 
-    // ───── ms helpers ─────
-    // Internal code wants milliseconds for time math; configs are in seconds for users.
 
-    public static long holdToDismissMs() {
-        return Math.round(HOLD_TO_DISMISS_SECONDS.get() * 1000.0D);
+    /** Hold durations in ticks for server-authoritative timing — gameTime advances
+     *  with the world clock (pauses with the game in single-player), unlike wall
+     *  clock. Floor at 1 tick so a 0-second config doesn't trip a divide-by-zero
+     *  in the client's progress math. */
+    public static long holdToDismissTicks() {
+        return Math.max(1L, Math.round(HOLD_TO_DISMISS_SECONDS.get() * 20.0D));
     }
 
-    public static long holdToSummonMs() {
-        return Math.round(HOLD_TO_SUMMON_SECONDS.get() * 1000.0D);
+    public static long holdToSummonTicks() {
+        return Math.max(1L, Math.round(HOLD_TO_SUMMON_SECONDS.get() * 20.0D));
+    }
+
+    public static long summonCooldownMs() {
+        return SUMMON_COOLDOWN_SECONDS.get() * 1000L;
     }
 
     public static long summonGlobalCooldownMs() {
@@ -182,5 +182,4 @@ public final class Config {
         return REVIVAL_COOLDOWN_SECONDS.get() * 1000L;
     }
 
-    private Config() {}
 }

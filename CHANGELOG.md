@@ -1,3 +1,16 @@
+## 1.0.2
+---
+### Added
+- Hold-to-bond on the Bind button — short press doesn't fire, prevents accidental claims.
+
+### Changed
+- Summoning a pet now clears some effects (fire, freeze ticks, fall distance, air). Rescuing a burning pet actually puts it out.
+- Hold progress bar interpolates between server ticks; renders smoothly at high framerates instead of stepping every 50ms.
+
+### Fixed
+- Per-player summon cooldowns no longer carry over between worlds in single-player.
+- Several deny messages (no-such-bond, not-loaded, etc.) now render correctly instead of falling back to raw translation keys.
+
 ## 1.0.1
 ---
 ### Added

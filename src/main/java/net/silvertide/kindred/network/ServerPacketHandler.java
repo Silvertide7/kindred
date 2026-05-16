@@ -9,18 +9,18 @@ import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import net.silvertide.kindred.attachment.Bond;
 import net.silvertide.kindred.attachment.BondRoster;
+import net.silvertide.kindred.bond.HoldManager;
+import net.silvertide.kindred.bond.bond_results.ClaimResult;
 import net.silvertide.kindred.config.Config;
-import net.silvertide.kindred.bond.BondIndex;
-import net.silvertide.kindred.network.packet.C2SBreakBond;
+import net.silvertide.kindred.bond.BondEntityIndex;
+import net.silvertide.kindred.network.packet.C2SCancelHold;
 import net.silvertide.kindred.network.packet.C2SCheckBindCandidate;
 import net.silvertide.kindred.network.packet.C2SClaimEntity;
-import net.silvertide.kindred.network.packet.C2SDismissBond;
 import net.silvertide.kindred.network.packet.C2SOpenRoster;
 import net.silvertide.kindred.network.packet.C2SRenameBond;
 import net.silvertide.kindred.network.packet.C2SReorderBond;
+import net.silvertide.kindred.network.packet.C2SRequestHold;
 import net.silvertide.kindred.network.packet.C2SSetActivePet;
-import net.silvertide.kindred.network.packet.C2SSummonBond;
-import net.silvertide.kindred.network.packet.C2SSummonByKeybind;
 import net.silvertide.kindred.network.packet.S2CBindCandidateResult;
 import net.silvertide.kindred.network.packet.S2CRosterSync;
 import net.silvertide.kindred.registry.ModAttachments;
@@ -33,7 +33,7 @@ import java.util.UUID;
 
 public final class ServerPacketHandler {
 
-    /** Server-side guard against spoofed claim packets. Client raycast caps at 8. */
+    // Server-side guard against spoofed claim packets
     private static final double MAX_CLAIM_DISTANCE_SQ = 12.0D * 12.0D;
 
     public static void onOpenRoster(C2SOpenRoster payload, IPayloadContext context) {
@@ -43,77 +43,17 @@ public final class ServerPacketHandler {
         });
     }
 
-    public static void onSummonByKeybind(C2SSummonByKeybind payload, IPayloadContext context) {
+    public static void onRequestHold(C2SRequestHold payload, IPayloadContext context) {
         context.enqueueWork(() -> {
             if (!(context.player() instanceof ServerPlayer player)) return;
-            BondRoster roster = player.getData(ModAttachments.BOND_ROSTER.get());
-            if (roster.bonds().isEmpty()) {
-                player.sendSystemMessage(Component.translatable("kindred.summon.no_bonds"));
-                return;
-            }
-            // The keybind always targets the active pet. By invariant (set on claim,
-            // restored on break, migrated on login) this is non-empty whenever bonds is.
-            Optional<UUID> activeId = roster.activePetId();
-            if (activeId.isEmpty()) {
-                player.sendSystemMessage(Component.translatable("kindred.summon.no_active"));
-                return;
-            }
-            BondService.SummonResult result = BondService.summon(player, activeId.get());
-            messageForSummonResult(result).ifPresent(player::sendSystemMessage);
-            if (isSummonSuccess(result)) sendRosterSync(player);
+            HoldManager.get().requestStart(player, payload.action(), payload.bondId().orElse(null));
         });
     }
 
-    public static void onSummonBond(C2SSummonBond payload, IPayloadContext context) {
+    public static void onCancelHold(C2SCancelHold payload, IPayloadContext context) {
         context.enqueueWork(() -> {
             if (!(context.player() instanceof ServerPlayer player)) return;
-            BondService.SummonResult result = BondService.summon(player, payload.bondId());
-            messageForSummonResult(result).ifPresent(player::sendSystemMessage);
-            if (isSummonSuccess(result)) sendRosterSync(player);
-        });
-    }
-
-    /**
-     * Returns chat output for results the player should see. Successes
-     * ({@code WALKING}, {@code TELEPORTED_NEAR}, {@code SUMMONED_FRESH}) are silent —
-     * the pet appearing is its own feedback. {@code NO_SUCH_BOND} and
-     * {@code SPAWN_FAILED} are silent too: the first shouldn't reach here past
-     * client-side validation, the second is a technical fault that the player
-     * can't act on. The remaining states each map to a translatable reason.
-     */
-    private static Optional<Component> messageForSummonResult(BondService.SummonResult result) {
-        String key = switch (result) {
-            case BANNED_DIMENSION -> "kindred.summon.banned_dimension";
-            case BANNED_BIOME -> "kindred.summon.banned_biome";
-            case ON_COOLDOWN -> "kindred.summon.on_cooldown";
-            case GLOBAL_COOLDOWN -> "kindred.summon.global_cooldown";
-            case REVIVAL_PENDING -> "kindred.summon.reviving";
-            case NO_SPACE -> "kindred.summon.no_space";
-            case PLAYER_AIRBORNE -> "kindred.summon.player_airborne";
-            case CROSS_DIM_BLOCKED -> "kindred.summon.cross_dim_blocked";
-            case WALKING, TELEPORTED_NEAR, SUMMONED_FRESH, NO_SUCH_BOND, SPAWN_FAILED -> null;
-        };
-        return Optional.ofNullable(key).map(Component::translatable);
-    }
-
-    public static void onBreakBond(C2SBreakBond payload, IPayloadContext context) {
-        context.enqueueWork(() -> {
-            if (!(context.player() instanceof ServerPlayer player)) return;
-            // Result is informational only — break success is reflected in the
-            // screen via sendRosterSync; failure (NO_SUCH_BOND) shouldn't reach
-            // here past client-side validation. No chat output either way.
-            BondService.breakBond(player, payload.bondId());
-            sendRosterSync(player);
-        });
-    }
-
-    public static void onDismissBond(C2SDismissBond payload, IPayloadContext context) {
-        context.enqueueWork(() -> {
-            if (!(context.player() instanceof ServerPlayer player)) return;
-            // Same shape as break — dismiss success/failure is reflected in the
-            // roster sync (entity discard + bond.dismissed flag), no chat needed.
-            BondService.DismissResult result = BondService.dismiss(player, payload.bondId());
-            if (result == BondService.DismissResult.DISMISSED) sendRosterSync(player);
+            HoldManager.get().cancel(player);
         });
     }
 
@@ -122,22 +62,20 @@ public final class ServerPacketHandler {
             if (!(context.player() instanceof ServerPlayer player)) return;
             ServerLevel level = (ServerLevel) player.level();
             Entity target = level.getEntity(payload.entityUUID());
-            // Entity gone or out of reach — silent rejection (no message). The screen
-            // falls back to the generic "look at a tamed pet" hint in that case.
             if (target == null || target.distanceToSqr(player) > MAX_CLAIM_DISTANCE_SQ) {
                 PacketDistributor.sendToPlayer(player, new S2CBindCandidateResult(
                         payload.entityUUID(), false, Optional.empty()));
                 return;
             }
-            BondService.ClaimResult result = BondService.checkClaimEligibility(player, target);
-            boolean canBind = result == BondService.ClaimResult.CLAIMED;
+            ClaimResult result = BondService.checkClaimEligibility(player, target);
+            boolean canBind = result == ClaimResult.CLAIMED;
             Optional<String> denyKey = canBind ? Optional.empty() : Optional.of(denyKeyFor(result));
             PacketDistributor.sendToPlayer(player, new S2CBindCandidateResult(
                     payload.entityUUID(), canBind, denyKey));
         });
     }
 
-    private static String denyKeyFor(BondService.ClaimResult result) {
+    private static String denyKeyFor(ClaimResult result) {
         return switch (result) {
             case NOT_OWNABLE -> "kindred.bind.deny.not_ownable";
             case NOT_OWNED_BY_PLAYER -> "kindred.bind.deny.not_owned";
@@ -158,28 +96,18 @@ public final class ServerPacketHandler {
             ServerLevel level = (ServerLevel) player.level();
             Entity target = level.getEntity(payload.entityUUID());
             if (target == null || target.distanceToSqr(player) > MAX_CLAIM_DISTANCE_SQ) {
-                // Silent reject — the screen footer already handled the deny, and
-                // by the time the player clicked Bind they were aiming at a
-                // confirmed candidate. Reaching here means the entity moved away
-                // or unloaded between confirm and click; nothing actionable.
                 return;
             }
-            BondService.ClaimResult result = BondService.tryClaim(player, target);
-            if (result == BondService.ClaimResult.CLAIMED) {
-                player.sendSystemMessage(Component.translatable(
-                        "kindred.bind.success", target.getType().getDescription()));
+            ClaimResult result = BondService.tryClaim(player, target);
+            if (result == ClaimResult.CLAIMED) {
                 sendRosterSync(player);
             } else {
-                // Failure path: surface the same translated deny reason the screen
-                // footer would show. Args for the arg-bearing keys are interpolated
-                // here so the chat reads "Requires Charisma level 3" instead of
-                // "Requires %1$s level %2$s".
                 player.sendSystemMessage(claimDenyMessage(result));
             }
         });
     }
 
-    private static Component claimDenyMessage(BondService.ClaimResult result) {
+    private static Component claimDenyMessage(ClaimResult result) {
         String key = denyKeyFor(result);
         return switch (result) {
             case NOT_ENOUGH_XP ->
@@ -197,6 +125,7 @@ public final class ServerPacketHandler {
     public static void onRenameBond(C2SRenameBond payload, IPayloadContext context) {
         context.enqueueWork(() -> {
             if (!(context.player() instanceof ServerPlayer player)) return;
+            if (!Config.ALLOW_RENAME.get()) return;
             BondRoster roster = player.getData(ModAttachments.BOND_ROSTER.get());
             Optional<Bond> bond = roster.get(payload.bondId());
             if (bond.isEmpty()) return;
@@ -205,9 +134,7 @@ public final class ServerPacketHandler {
                     .filter(s -> !s.isEmpty());
             Bond updated = bond.get().withDisplayName(sanitized);
             player.setData(ModAttachments.BOND_ROSTER.get(), roster.with(updated));
-            // Mirror the rename onto the live entity so the in-world nametag updates
-            // immediately. Offline pets pick this up on next materialize from displayName.
-            BondIndex.get().find(payload.bondId())
+            BondEntityIndex.get().find(payload.bondId())
                     .ifPresent(e -> BondService.applyDisplayName(e, sanitized));
             sendRosterSync(player);
         });
@@ -215,8 +142,8 @@ public final class ServerPacketHandler {
 
     private static String sanitizeName(String raw) {
         if (raw == null) return "";
-        String s = raw.replace("§", "");        // strip Minecraft formatting codes
-        s = s.replaceAll("\\p{Cntrl}", "");          // strip control chars (newlines, tabs, etc.)
+        String s = raw.replace("§", "");
+        s = s.replaceAll("\\p{Cntrl}", "");
         s = s.trim();
         if (s.length() > MAX_NAME_LEN) s = s.substring(0, MAX_NAME_LEN);
         return s;
@@ -249,10 +176,8 @@ public final class ServerPacketHandler {
     public static void sendRosterSync(ServerPlayer player) {
         BondRoster roster = player.getData(ModAttachments.BOND_ROSTER.get());
         long now = System.currentTimeMillis();
-        long cooldownMs = Config.SUMMON_COOLDOWN_TICKS.get() * 50L;
+        long cooldownMs = Config.summonCooldownMs();
         long revivalCooldownMs = Config.revivalCooldownMs();
-        // Use the LinkedHashMap's insertion order — that's the player's chosen row
-        // order (mutated via C2SReorderBond and preserved across save/load).
         List<BondView> views = roster.bonds().values().stream()
                 .map(b -> {
                     long remaining = Math.max(0L, cooldownMs - (now - b.lastSummonedAt()));
@@ -260,11 +185,8 @@ public final class ServerPacketHandler {
                     if (revivalCooldownMs > 0L && b.diedAt().isPresent()) {
                         revivalRemaining = Math.max(0L, revivalCooldownMs - (now - b.diedAt().get()));
                     }
-                    Optional<Entity> live = BondIndex.get().find(b.bondId());
+                    Optional<Entity> live = BondEntityIndex.get().find(b.bondId());
                     boolean loaded = live.isPresent();
-                    // Capture live NBT for loaded pets so saddle/armor/equipment changes
-                    // made in-world flow into the preview without waiting for the pet
-                    // to leave its chunk (which is when the cached snapshot refreshes).
                     CompoundTag nbt = loaded
                             ? live.get().saveWithoutId(new CompoundTag())
                             : b.nbtSnapshot();
@@ -275,12 +197,6 @@ public final class ServerPacketHandler {
                 .remainingMs(player.getUUID(), Config.summonGlobalCooldownMs());
         int effectiveCap = BondService.effectiveMaxBonds(player);
         PacketDistributor.sendToPlayer(player, new S2CRosterSync(views, globalRemaining, effectiveCap));
-    }
-
-    private static boolean isSummonSuccess(BondService.SummonResult result) {
-        return result == BondService.SummonResult.WALKING
-                || result == BondService.SummonResult.TELEPORTED_NEAR
-                || result == BondService.SummonResult.SUMMONED_FRESH;
     }
 
     private ServerPacketHandler() {}

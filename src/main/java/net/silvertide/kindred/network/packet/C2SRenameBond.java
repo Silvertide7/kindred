@@ -11,11 +11,6 @@ import net.silvertide.kindred.Kindred;
 import java.util.Optional;
 import java.util.UUID;
 
-/**
- * Empty {@code newName} clears the bond's display name (falls back to entity-type
- * label in the screen). Present sets it. Server sanitizes (strips formatting codes
- * and control chars) and caps length.
- */
 public record C2SRenameBond(UUID bondId, Optional<String> newName) implements CustomPacketPayload {
     public static final Type<C2SRenameBond> TYPE = new Type<>(
             ResourceLocation.fromNamespaceAndPath(Kindred.MODID, "c2s_rename_bond"));

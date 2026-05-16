@@ -47,11 +47,6 @@ public final class ClientRosterData {
         return bonds.stream().filter(BondView::isActive).findFirst();
     }
 
-    /** Returns the active bond — the keybind's only summon target. */
-    public static Optional<BondView> findKeybindSummonTarget() {
-        return findActive();
-    }
-
     public static boolean isOnCooldown(BondView bond) {
         long elapsedSinceReceive = System.currentTimeMillis() - lastUpdatedClientMs;
         return elapsedSinceReceive < bond.cooldownRemainingMs();

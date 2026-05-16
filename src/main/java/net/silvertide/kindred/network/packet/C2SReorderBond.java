@@ -10,10 +10,6 @@ import net.silvertide.kindred.Kindred;
 
 import java.util.UUID;
 
-/**
- * Move {@code bondId} by {@code delta} positions in the player's bond order
- * (negative = up, positive = down). Server clamps to valid bounds.
- */
 public record C2SReorderBond(UUID bondId, int delta) implements CustomPacketPayload {
     public static final Type<C2SReorderBond> TYPE = new Type<>(
             ResourceLocation.fromNamespaceAndPath(Kindred.MODID, "c2s_reorder_bond"));

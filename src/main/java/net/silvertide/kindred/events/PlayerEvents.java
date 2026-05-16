@@ -7,17 +7,19 @@ import net.minecraft.world.entity.Entity;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.entity.living.LivingDamageEvent;
+import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
-import net.neoforged.neoforge.network.PacketDistributor;
+import net.neoforged.neoforge.event.tick.ServerTickEvent;
+import net.silvertide.kindred.bond.BondEntityIndex;
+import net.silvertide.kindred.bond.GlobalSummonCooldownTracker;
+import net.silvertide.kindred.bond.HoldManager;
 import net.silvertide.kindred.config.Config;
-import net.silvertide.kindred.network.packet.S2CCancelHold;
 import net.silvertide.kindred.Kindred;
 import net.silvertide.kindred.attachment.Bond;
 import net.silvertide.kindred.attachment.BondRoster;
 import net.silvertide.kindred.registry.ModAttachments;
 import net.silvertide.kindred.network.ServerPacketHandler;
-import net.silvertide.kindred.bond.BondIndex;
 import net.silvertide.kindred.data.OfflineSnapshot;
 import net.silvertide.kindred.data.KindredSavedData;
 
@@ -71,36 +73,46 @@ public final class PlayerEvents {
     public static void onLivingDamage(LivingDamageEvent.Pre event) {
         if (!Config.CANCEL_HOLD_ON_DAMAGE.get()) return;
         if (!(event.getEntity() instanceof ServerPlayer player)) return;
-        PacketDistributor.sendToPlayer(player, new S2CCancelHold());
+        if (HoldManager.get().isHolding(player.getUUID())) {
+            HoldManager.get().cancel(player);
+        }
+    }
+
+    @SubscribeEvent
+    public static void onPlayerDeath(LivingDeathEvent event) {
+        if (!(event.getEntity() instanceof ServerPlayer player)) return;
+        HoldManager.get().cancel(player);
     }
 
     @SubscribeEvent
     public static void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
         if (!(event.getEntity() instanceof ServerPlayer player)) return;
         flushLoadedSnapshots(player);
+        HoldManager.get().cancel(player);
+    }
+
+    @SubscribeEvent
+    public static void onServerTick(ServerTickEvent.Post event) {
+        HoldManager.get().tickAll(event.getServer());
     }
 
     @SubscribeEvent
     public static void onServerStopping(ServerStoppingEvent event) {
-        // Final flush so live entity state is captured into player attachments before save.
         for (ServerPlayer player : event.getServer().getPlayerList().getPlayers()) {
             flushLoadedSnapshots(player);
         }
-        BondIndex.get().clear();
+        BondEntityIndex.get().clear();
+        HoldManager.get().clear();
+        GlobalSummonCooldownTracker.get().clear();
     }
 
-    /**
-     * Snapshot every loaded bonded entity belonging to the player into their roster.
-     * Used by logout and server-stop to capture state the player attachment would
-     * otherwise miss (since the entity hasn't unloaded yet).
-     */
     private static void flushLoadedSnapshots(ServerPlayer player) {
         BondRoster roster = player.getData(ModAttachments.BOND_ROSTER.get());
         if (roster.bonds().isEmpty()) return;
 
         BondRoster updated = roster;
         for (UUID bondId : roster.bonds().keySet()) {
-            Optional<Entity> entity = BondIndex.get().find(bondId);
+            Optional<Entity> entity = BondEntityIndex.get().find(bondId);
             if (entity.isEmpty()) continue;
 
             Entity e = entity.get();

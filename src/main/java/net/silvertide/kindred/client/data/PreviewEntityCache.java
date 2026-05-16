@@ -27,6 +27,8 @@ import java.util.UUID;
  * something we can avoid by caching entity instances.</p>
  */
 public final class PreviewEntityCache {
+    private static final int ABSTRACT_HORSE_FLAG_SADDLE = 4;
+
     private static final Map<UUID, LivingEntity> cache = new HashMap<>();
 
     public static LivingEntity getOrBuild(BondView view) {
@@ -78,15 +80,9 @@ public final class PreviewEntityCache {
         living.setTicksFrozen(0);
         living.setCustomNameVisible(false);
 
-        // Saddle isn't tracked in standard equipment slots — it lives in a separate
-        // inventory slot with the "show saddle" state driven by a SynchedEntityData
-        // flag bit. The flag is normally set by AbstractHorse.updateContainerEquipment,
-        // which no-ops on the client side. The preview entity never gets the synced
-        // value, so we read the saddle presence from the snapshot NBT and push the
-        // bit ourselves. Bit 4 of DATA_ID_FLAGS is FLAG_SADDLE.
         if (living instanceof AbstractHorse horse) {
             boolean saddled = nbt.contains("SaddleItem", Tag.TAG_COMPOUND);
-            horse.setFlag(4, saddled);
+            horse.setFlag(ABSTRACT_HORSE_FLAG_SADDLE, saddled);
         }
     }
 

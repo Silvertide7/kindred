@@ -34,8 +34,6 @@ public record BondRoster(Map<UUID, Bond> bonds, Optional<UUID> activePetId) {
         if (!bonds.containsKey(bondId)) return this;
         Map<UUID, Bond> next = new LinkedHashMap<>(bonds);
         next.remove(bondId);
-        // If the broken bond was the active one, promote the oldest remaining bond
-        // (if any). Keeps the invariant: bonds non-empty ⇒ active is set.
         Optional<UUID> nextActive;
         if (activePetId.isPresent() && activePetId.get().equals(bondId)) {
             nextActive = oldestBondId(next);
@@ -51,15 +49,6 @@ public record BondRoster(Map<UUID, Bond> bonds, Optional<UUID> activePetId) {
                 .map(Bond::bondId);
     }
 
-    /**
-     * Returns a roster with the given bondId set as active. Constraints:
-     * <ul>
-     *   <li>If the bondId isn't present in this roster, returns this unchanged.</li>
-     *   <li>Empty Optional is rejected (returns this unchanged) when the roster has
-     *       bonds — preserves the invariant that bonds non-empty ⇒ active is set.
-     *       Clearing only succeeds when there are no bonds left.</li>
-     * </ul>
-     */
     public BondRoster withActive(Optional<UUID> bondId) {
         if (bondId.isPresent() && !bonds.containsKey(bondId.get())) return this;
         if (bondId.isEmpty() && !bonds.isEmpty()) return this;
@@ -74,13 +63,6 @@ public record BondRoster(Map<UUID, Bond> bonds, Optional<UUID> activePetId) {
         return bonds.size();
     }
 
-    /**
-     * Returns a roster with {@code bondId} moved by {@code delta} positions in the
-     * bond order (negative = up, positive = down). Clamps to valid index bounds.
-     * The roster's {@link Map} is a {@link LinkedHashMap} and the codec preserves
-     * iteration order across save/load, so this is the source of truth for screen
-     * row order.
-     */
     public BondRoster withMoved(UUID bondId, int delta) {
         if (!bonds.containsKey(bondId) || delta == 0) return this;
         List<UUID> ids = new ArrayList<>(bonds.keySet());

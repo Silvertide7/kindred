@@ -278,6 +278,7 @@ public final class BondService {
 
                 if (distSq <= walkRange * walkRange && old instanceof Mob mob) {
                     wake(old);
+                    freshenForSummon(mob);
                     mob.getNavigation().moveTo(player.getX(), player.getY(), player.getZ(), Config.WALK_SPEED.get());
                     playSummonFx(playerLevel, player.getX(), player.getY(), player.getZ(), false);
                     writeSummonTimestamp(player, bond);
@@ -302,6 +303,7 @@ public final class BondService {
         Vec3 spawnPos = found.orElse(player.position());
 
         wake(old);
+        if (old instanceof LivingEntity oldLiving) freshenForSummon(oldLiving);
         old.setYRot(player.getYRot());
         old.teleportTo(spawnPos.x, spawnPos.y, spawnPos.z);
 
@@ -361,6 +363,7 @@ public final class BondService {
         }
 
         applyDisplayName(teleported, bond.displayName());
+        if (teleported instanceof LivingEntity teleportedLiving) freshenForSummon(teleportedLiving);
 
         int newRevision = saved.incrementRevision(bondId);
         teleported.setData(ModAttachments.BONDED.get(), teleported.getData(ModAttachments.BONDED.get()).withRevision(newRevision));
@@ -414,8 +417,12 @@ public final class BondService {
 
         applyDisplayName(entity, bond.displayName());
 
-        if (!Config.DEATH_IS_PERMANENT.get() && entity instanceof LivingEntity living && living.getHealth() <= 0) {
-            freshenForRevival(living);
+        if (entity instanceof LivingEntity living) {
+            if (!Config.DEATH_IS_PERMANENT.get() && living.getHealth() <= 0) {
+                freshenForRevival(living);
+            } else {
+                freshenForSummon(living);
+            }
         }
 
         wake(entity);
@@ -456,13 +463,17 @@ public final class BondService {
         }
     }
 
-    private static void freshenForRevival(LivingEntity living) {
-        living.setHealth(living.getMaxHealth());
+    private static void freshenForSummon(LivingEntity living) {
         living.clearFire();
-        living.removeAllEffects();
-        living.setAirSupply(living.getMaxAirSupply());
-        living.fallDistance = 0F;
         living.setTicksFrozen(0);
+        living.fallDistance = 0F;
+        living.setAirSupply(living.getMaxAirSupply());
+    }
+
+    private static void freshenForRevival(LivingEntity living) {
+        freshenForSummon(living);
+        living.setHealth(living.getMaxHealth());
+        living.removeAllEffects();
     }
 
     private static void playSummonFx(ServerLevel level, double x, double y, double z, boolean withParticles) {

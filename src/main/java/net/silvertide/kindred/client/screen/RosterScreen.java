@@ -4,35 +4,20 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
-import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
-import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.entity.OwnableEntity;
-import net.minecraft.world.entity.Saddleable;
-import net.minecraft.world.entity.projectile.ProjectileUtil;
-import net.minecraft.world.phys.AABB;
-import net.minecraft.world.phys.EntityHitResult;
-import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.silvertide.kindred.bond.HoldManager;
 import net.silvertide.kindred.client.data.ClientRosterData;
 import net.silvertide.kindred.client.data.HoldActionState;
 import net.silvertide.kindred.client.data.PreviewEntityCache;
-import net.silvertide.kindred.compat.pmmo.PmmoMode;
 import net.silvertide.kindred.config.Config;
 import net.silvertide.kindred.network.BondView;
 import net.silvertide.kindred.network.packet.C2SCancelHold;
-import net.silvertide.kindred.network.packet.C2SCheckBindCandidate;
-import net.silvertide.kindred.network.packet.C2SClaimEntity;
 import net.silvertide.kindred.network.packet.C2SOpenRoster;
-import net.silvertide.kindred.network.packet.C2SReorderBond;
 import net.silvertide.kindred.network.packet.C2SRequestHold;
-import net.silvertide.kindred.network.packet.C2SSetActivePet;
 
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
 import static net.silvertide.kindred.client.screen.ScreenDrawUtil.dimensionName;
@@ -57,7 +42,6 @@ import static net.silvertide.kindred.client.screen.ScreenDrawUtil.inBox;
 public final class RosterScreen extends Screen {
     private static final int PANEL_WIDTH = 400;
     private static final int ROW_W = 280;
-    private static final int PREVIEW_W = 100;
     private static final int ROW_HEIGHT = 32;
     private static final int ROW_PAD = 4;
 
@@ -74,8 +58,6 @@ public final class RosterScreen extends Screen {
     private static final int FOOTER_H = 32;
     private static final int CLAIM_BTN_H = 20;
     private static final long BREAK_CONFIRM_TTL_MS = 3000L;
-    private static final double CLAIM_RAYCAST_DISTANCE = 8.0D;
-    private static final long BIND_HOLD_MS = 1000L;
 
     // ARGB palette
     private static final int C_BG = 0xCC101418;
@@ -99,12 +81,9 @@ public final class RosterScreen extends Screen {
     /** Dimmed label color for disabled buttons — pairs with the darker disabled
      *  background to make "this can't be clicked" obvious at a glance. */
     private static final int C_BTN_TEXT_DISABLED = 0xFF6F6A60;
-    private static final int C_BTN_CLAIM = 0xFF3D5C8A;
-    private static final int C_BTN_CLAIM_HOVER = 0xFF5278B0;
     private static final int C_STAR_ACTIVE = 0xFFE7B43B;
     private static final int C_RENAME_EDIT_TEXT = 0xFFE7B43B;
     private static final int C_STAR_INACTIVE = 0xFF4A5260;
-    private static final int C_STAR_HOVER = 0xFF8A95A8;
     /** Radial cooldown indicator: light wedge that drains counter-clockwise as
      *  the cooldown elapses. Drawn centered on the Summon button (replaces the
      *  text label entirely while the cooldown is running). */
@@ -112,31 +91,13 @@ public final class RosterScreen extends Screen {
     private static final int C_PIE_RADIUS = 5;
 
     private static final int STAR_COL_W = 16;
-    private static final int ACTION_BTN_H = 14;
-    private static final int ACTION_BTN_GAP = 2;
-    private static final int PANE_BTN_PAD = 4;
-    /** Total vertical space the stacked pane buttons occupy. Three rows: Move Up |
-     *  Move Down (split), Rename (full width), Set Active (full width). */
-    private static final int PANE_BTN_AREA_H = PANE_BTN_PAD
-            + ACTION_BTN_H + ACTION_BTN_GAP
-            + ACTION_BTN_H + ACTION_BTN_GAP
-            + ACTION_BTN_H + PANE_BTN_PAD;
-    /** Top padding inside the preview pane — keeps tall entities (horses, llamas)
-     *  from cropping their heads against the panel border. */
-    private static final int PREVIEW_TOP_PAD = 16;
-    /** Pixels the preview pane content extends below the row list's bottom edge.
-     *  Borrows space from the footer area (the bind-hint text is centered across
-     *  the panel, so the right side is empty). Pushes both the entity render and
-     *  the stacked buttons further down. */
-    private static final int PREVIEW_BTM_EXTEND = 14;
 
     private int leftPos;
     private int topPos;
     private int panelHeight;
     private int rowsTop;
     private int rowsBottom;
-    private int previewX;       // left of preview pane (relative to screen)
-    private int separatorX;     // 1px vertical separator x
+    private int separatorX;
     private int claimBtnX;
     private int claimBtnY;
     private int claimBtnW;
@@ -144,11 +105,6 @@ public final class RosterScreen extends Screen {
 
     private UUID breakArmedBondId = null;
     private long breakArmedExpiresAt = 0L;
-
-    /** Wall-clock start time of an in-progress Bind button hold; 0 when not held.
-     *  Bonding is a one-time commitment, so we gate clicks behind a brief hold to
-     *  prevent fat-finger mistakes — purely client-side, no server involvement. */
-    private long bindHoldStartMs = 0L;
 
     /** Tracks which row button the mouse is currently pressing. Null when no
      *  button is held.
@@ -168,26 +124,9 @@ public final class RosterScreen extends Screen {
      *  being pressed for cancel-on-release / drag-off detection. */
     private record RowHold(UUID bondId, RowHoldAction action) {}
 
-    /** Bond shown in the preview pane. Null until first sync. Defaults to the active
-     *  pet on open; clicking a row body switches it. */
-    private UUID selectedBondId = null;
-
     private final RenameEditor renameEditor = new RenameEditor();
-
-    /** Snapshotted at {@link #init()} only — never updated while the screen is open.
-     *  Server enforces distance on the actual bind packet. */
-    private Entity initialCandidate;
-
-    /** Tri-state for the bind candidate's server-side validation:
-     *  null = no pending check; FALSE = waiting on response or rejected; TRUE = confirmed.
-     *  Owner UUID isn't synced to the client for {@code AbstractHorse}, so we round-trip
-     *  the eligibility check through the server before showing the Bind button. */
-    private Boolean bindCandidateConfirmed = null;
-
-    /** Translation key for "why can't I bind this", set when the server denies the
-     *  candidate. Empty when the candidate is bindable, pending, or there's no
-     *  candidate at all. Renders in the footer in place of the generic bind hint. */
-    private java.util.Optional<String> bindDenyKey = java.util.Optional.empty();
+    private final BindFooter bindFooter = new BindFooter();
+    private final PreviewPane previewPane = new PreviewPane(renameEditor);
 
     public RosterScreen() {
         super(Component.translatable("kindred.screen.title"));
@@ -202,52 +141,25 @@ public final class RosterScreen extends Screen {
         rowsTop = topPos + 24;
         rowsBottom = topPos + panelHeight - FOOTER_H;
 
-        // Layout: [4 pad][ROW_W rows][4 gap][1 separator][3 gap][PREVIEW_W preview][8 pad]
         separatorX = leftPos + ROW_PAD + ROW_W + 4;
-        previewX = separatorX + 4;
+        int previewX = separatorX + 4;
 
-        // Claim/bind button spans full panel width minus padding (footer is below preview).
-        // Constrain the Bind button to the rows column so it doesn't stretch under
-        // the preview pane (which has its own buttons in that vertical band).
         claimBtnW = ROW_W;
         claimBtnX = leftPos + ROW_PAD;
         claimBtnY = topPos + panelHeight - FOOTER_H + (FOOTER_H - CLAIM_BTN_H) / 2;
 
-        // Default-select the active pet so the preview shows something on open.
-        Optional<BondView> active = ClientRosterData.findActive();
-        active.ifPresent(bv -> selectedBondId = bv.bondId());
+        previewPane.configureLayout(previewX, rowsTop, rowsBottom);
+        previewPane.selectActiveOnOpen();
 
-        // Lock in the bind candidate at open time. No re-raycast while the screen is open.
-        // The button stays hidden until the server confirms eligibility — owner UUID
-        // isn't synced to the client for AbstractHorse so we can't validate locally.
-        //
-        // Always round-trip when aiming at a bindable entity: the server is the
-        // source of truth for cap state (PMMO level can change between syncs) and
-        // returns the precise deny reason. The "no candidate but still at cap"
-        // case is handled live in renderFooter from current ClientRosterData, so
-        // it auto-refreshes when this open's roster sync arrives.
-        LocalPlayer p = Minecraft.getInstance().player;
-        if (p != null) {
-            Entity hit = raycastEntity(p);
-            if (hit != null && passesEntityGates(hit)) {
-                initialCandidate = hit;
-                bindCandidateConfirmed = Boolean.FALSE;  // pending until server replies
-                PacketDistributor.sendToServer(new C2SCheckBindCandidate(hit.getUUID()));
-            }
-        }
+        int costLineY = topPos + panelHeight - FOOTER_H + 1;
+        bindFooter.configureLayout(claimBtnX, claimBtnY, claimBtnW, costLineY);
+        bindFooter.onOpen(Minecraft.getInstance().player);
 
         PacketDistributor.sendToServer(new C2SOpenRoster());
     }
 
-    /** Called by the network handler when the server returns its eligibility verdict. */
     public void onBindCandidateResult(java.util.UUID entityUUID, boolean canBind, java.util.Optional<String> denyKey) {
-        if (initialCandidate == null) return;
-        if (!entityUUID.equals(initialCandidate.getUUID())) return;  // stale response
-        bindCandidateConfirmed = canBind ? Boolean.TRUE : Boolean.FALSE;
-        bindDenyKey = canBind ? java.util.Optional.empty() : denyKey;
-        // Keep initialCandidate around even on deny, so the footer can render the
-        // type-specific deny message (currently it just uses the lang key as-is, but
-        // type-aware messages are an easy follow-up).
+        bindFooter.onCandidateResult(entityUUID, canBind, denyKey);
     }
 
     /**
@@ -263,8 +175,7 @@ public final class RosterScreen extends Screen {
         super.removed();
         PreviewEntityCache.clear();
         cancelRowHoldAndNotifyServer();
-        // Bind hold is purely client-side, no server notify — just drop the timer.
-        bindHoldStartMs = 0L;
+        bindFooter.onClose();
     }
 
     @Override
@@ -274,9 +185,7 @@ public final class RosterScreen extends Screen {
         // bond was removed under us. Completion itself runs server-side; this
         // just keeps the local press state honest.
         processRowHold(mouseX, mouseY);
-        // Local client-side Bind button hold — fires the claim packet on
-        // completion or clears the timer on drift-off / candidate-gone.
-        processBindHold(mouseX, mouseY);
+        bindFooter.tickHold(mouseX, mouseY);
 
         super.render(g, mouseX, mouseY, partialTick);
 
@@ -303,14 +212,9 @@ public final class RosterScreen extends Screen {
         // Vertical separator between rows column and preview pane
         g.fill(separatorX, rowsTop, separatorX + 1, rowsBottom, C_SEPARATOR);
 
-        List<BondView> bonds = ClientRosterData.bonds();
-        // Recover from invalidated selection (broken bond): fall back to active or first.
-        if (selectedBondId != null && bonds.stream().noneMatch(b -> b.bondId().equals(selectedBondId))) {
-            selectedBondId = ClientRosterData.findActive()
-                    .map(BondView::bondId)
-                    .orElseGet(() -> bonds.isEmpty() ? null : bonds.get(0).bondId());
-        }
+        previewPane.refreshSelection();
 
+        List<BondView> bonds = ClientRosterData.bonds();
         if (bonds.isEmpty()) {
             g.drawCenteredString(font, Component.translatable("kindred.screen.empty"),
                     leftPos + ROW_PAD + ROW_W / 2, (rowsTop + rowsBottom) / 2 - 4, C_TEXT_MUTED);
@@ -325,295 +229,11 @@ public final class RosterScreen extends Screen {
             g.disableScissor();
         }
 
-        renderPreviewPane(g, mouseX, mouseY);
-        renderFooter(g, mouseX, mouseY);
+        previewPane.render(g, font, mouseX, mouseY);
+        bindFooter.render(g, font, mouseX, mouseY);
     }
 
-    private void renderPreviewPane(GuiGraphics g, int mouseX, int mouseY) {
-        BondView selected = currentSelection();
-        if (selected == null) {
-            g.drawCenteredString(font, Component.translatable("kindred.screen.preview_empty"),
-                    previewX + PREVIEW_W / 2, (rowsTop + rowsBottom) / 2 - 4, C_TEXT_MUTED);
-            return;
-        }
 
-        int paneBottom = previewBottom();
-        int entityRenderTop = rowsTop + PREVIEW_TOP_PAD;
-        int entityRenderBottom = paneBottom - PANE_BTN_AREA_H;
-
-        LivingEntity entity = PreviewEntityCache.getOrBuild(selected);
-        if (entity == null) {
-            g.drawCenteredString(font, Component.translatable("kindred.screen.preview_unavailable"),
-                    previewX + PREVIEW_W / 2, (entityRenderTop + entityRenderBottom) / 2 - 4, C_TEXT_MUTED);
-        } else {
-            float w = Math.max(0.1F, entity.getBbWidth());
-            float h = Math.max(0.1F, entity.getBbHeight());
-            int paneH = entityRenderBottom - entityRenderTop;
-            // Tall mobs (horse, llama, camel) have model heads that extend well above
-            // their bounding-box height. The 0.5 multiplier on the height-fit pulls
-            // their scale down so the head clears the pane top; smaller pets still hit
-            // the absolute cap of 60 from the width side.
-            int scaleByH = (int) (paneH * 0.5F / h);
-            int scaleByW = (int) (PREVIEW_W * 0.7F / w);
-            int scale = Math.max(20, Math.min(60, Math.min(scaleByH, scaleByW)));
-
-            // Clamp the mouseY we feed the renderer to a tight band around vertical
-            // center. The vanilla helper derives pitch from (centerY - mouseY) / 40,
-            // so a cursor above the panel would tilt the head up and out of the box.
-            // Yaw still follows the actual mouseX for a bit of life.
-            int centerY = (entityRenderTop + entityRenderBottom) / 2;
-            int clampedMouseY = Math.max(centerY - 8, Math.min(centerY + 8, (int) mouseY));
-            InventoryScreen.renderEntityInInventoryFollowsMouse(
-                    g,
-                    previewX, entityRenderTop,
-                    previewX + PREVIEW_W, entityRenderBottom,
-                    scale,
-                    0.0625F,
-                    mouseX, clampedMouseY,
-                    entity);
-        }
-
-        boolean allowRename = Config.ALLOW_RENAME.get();
-        int btnX = previewX + 4;
-        int btnW = PREVIEW_W - 8;
-        int setActiveBtnY = paneBottom - PANE_BTN_PAD - ACTION_BTN_H;
-        int renameBtnY = setActiveBtnY - ACTION_BTN_GAP - ACTION_BTN_H;
-        // When rename is disabled, slide Move into Rename's slot so there's no gap.
-        int moveBtnY = allowRename
-                ? renameBtnY - ACTION_BTN_GAP - ACTION_BTN_H
-                : renameBtnY;
-
-        // Move Up | Move Down — split row at the top of the stack. Disabled when the
-        // selected bond is already at the corresponding edge of the list.
-        int moveHalfW = (btnW - ACTION_BTN_GAP) / 2;
-        int moveUpX = btnX;
-        int moveDownX = btnX + moveHalfW + ACTION_BTN_GAP;
-        int moveDownW = btnW - moveHalfW - ACTION_BTN_GAP;
-
-        List<BondView> bonds = ClientRosterData.bonds();
-        int bondIdx = -1;
-        for (int i = 0; i < bonds.size(); i++) {
-            if (bonds.get(i).bondId().equals(selected.bondId())) {
-                bondIdx = i;
-                break;
-            }
-        }
-        boolean canMoveUp = bondIdx > 0;
-        boolean canMoveDown = bondIdx >= 0 && bondIdx < bonds.size() - 1;
-        boolean moveUpHover = canMoveUp && inBox(mouseX, mouseY, moveUpX, moveBtnY, moveHalfW, ACTION_BTN_H);
-        boolean moveDownHover = canMoveDown && inBox(mouseX, mouseY, moveDownX, moveBtnY, moveDownW, ACTION_BTN_H);
-        int moveUpColor = !canMoveUp
-                ? C_BTN_DISMISS_DISABLED
-                : (moveUpHover ? C_BTN_CLAIM_HOVER : C_BTN_CLAIM);
-        int moveDownColor = !canMoveDown
-                ? C_BTN_DISMISS_DISABLED
-                : (moveDownHover ? C_BTN_CLAIM_HOVER : C_BTN_CLAIM);
-        drawButton(g, font, moveUpX, moveBtnY, moveHalfW, ACTION_BTN_H,
-                Component.translatable("kindred.screen.move_up"),
-                moveUpColor, 0F, canMoveUp ? C_TEXT : C_BTN_TEXT_DISABLED);
-        drawButton(g, font, moveDownX, moveBtnY, moveDownW, ACTION_BTN_H,
-                Component.translatable("kindred.screen.move_down"),
-                moveDownColor, 0F, canMoveDown ? C_TEXT : C_BTN_TEXT_DISABLED);
-
-        // Rename button (middle) — hidden when allowRename is false.
-        if (allowRename) {
-            boolean editingThis = renameEditor.isEditingBond(selected.bondId());
-            boolean renameHover = !editingThis && inBox(mouseX, mouseY, btnX, renameBtnY, btnW, ACTION_BTN_H);
-            int renameColor = editingThis
-                    ? C_BTN_CLAIM_HOVER
-                    : (renameHover ? C_BTN_CLAIM_HOVER : C_BTN_CLAIM);
-            drawButton(g, font, btnX, renameBtnY, btnW, ACTION_BTN_H,
-                    Component.translatable("kindred.screen.rename"), renameColor);
-        }
-
-        // Set Active button (bottom of stack)
-        boolean isActive = selected.isActive();
-        boolean setActiveHover = !isActive && inBox(mouseX, mouseY, btnX, setActiveBtnY, btnW, ACTION_BTN_H);
-        Component setActiveLabel = isActive
-                ? Component.translatable("kindred.screen.is_active")
-                : Component.translatable("kindred.screen.set_active");
-        int setActiveColor = isActive
-                ? C_STAR_ACTIVE
-                : (setActiveHover ? C_BTN_CLAIM_HOVER : C_BTN_CLAIM);
-        drawButton(g, font, btnX, setActiveBtnY, btnW, ACTION_BTN_H, setActiveLabel, setActiveColor);
-    }
-
-    private int previewBottom() {
-        return rowsBottom + PREVIEW_BTM_EXTEND;
-    }
-
-    private int renameBtnY() {
-        return previewBottom() - PANE_BTN_PAD - ACTION_BTN_H - ACTION_BTN_GAP - ACTION_BTN_H;
-    }
-
-    private int setActiveBtnY() {
-        return previewBottom() - PANE_BTN_PAD - ACTION_BTN_H;
-    }
-
-    private int moveBtnY() {
-        // When rename is hidden, Move slides down into Rename's slot — see render path.
-        return Config.ALLOW_RENAME.get()
-                ? renameBtnY() - ACTION_BTN_GAP - ACTION_BTN_H
-                : renameBtnY();
-    }
-
-    private BondView currentSelection() {
-        if (selectedBondId == null) return null;
-        for (BondView b : ClientRosterData.bonds()) {
-            if (b.bondId().equals(selectedBondId)) return b;
-        }
-        return null;
-    }
-
-    private void renderFooter(GuiGraphics g, int mouseX, int mouseY) {
-        Entity candidate = findClaimCandidate();
-        if (candidate != null) {
-            int xpCost = Config.BOND_XP_LEVEL_COST.get();
-            int btnY = currentBindBtnY();
-            // Cost preview line above the Bind button (only when bondXpLevelCost > 0).
-            // Soft red when the player can't afford so the visual affordance matches
-            // the server's NOT_ENOUGH_XP rejection — they'll click and see the deny
-            // message, but the red label is the early signal.
-            if (xpCost > 0) {
-                LocalPlayer p = Minecraft.getInstance().player;
-                boolean canAfford = p == null || p.getAbilities().instabuild || p.experienceLevel >= xpCost;
-                int costColor = canAfford ? C_TEXT_MUTED : 0xFFE57878;
-                Component costLabel = Component.translatable("kindred.bind.cost", xpCost);
-                int costY = topPos + panelHeight - FOOTER_H + 1;
-                g.drawCenteredString(font, costLabel, claimBtnX + claimBtnW / 2, costY, costColor);
-            }
-            boolean hover = inBox(mouseX, mouseY, claimBtnX, btnY, claimBtnW, CLAIM_BTN_H);
-            String typeName = BuiltInRegistries.ENTITY_TYPE.getKey(candidate.getType()).getPath();
-            Component label = Component.translatable("kindred.screen.bind", typeName);
-            drawButton(g, font, claimBtnX, btnY, claimBtnW, CLAIM_BTN_H, label,
-                    hover ? C_BTN_CLAIM_HOVER : C_BTN_CLAIM,
-                    bindHoldProgress());
-            return;
-        }
-        // No bindable candidate: show the deny reason if the server gave us one
-        // for the candidate (server is authoritative on per-entity gates), or fall
-        // back to a live cap check from ClientRosterData so "you're maxed out"
-        // surfaces even without a pet in view. Reading ClientRosterData here (not
-        // a cached snapshot) means the message tracks roster syncs that arrive
-        // while the screen is open — e.g. PMMO level-ups raising the cap.
-        //
-        // Three keys take positional args so the player sees actual numbers
-        // instead of vague text:
-        //   - not_enough_xp:    %1 = required levels
-        //   - pmmo_locked:      %1 = skill display name (translated via PMMO's
-        //                       pmmo.<skill> lang key), %2 = start level
-        //   - at_capacity:      ordinarily the literal "Max bonds reached", but
-        //                       in PMMO LINEAR mode with room to grow we swap to
-        //                       pmmo_next_unlock with the milestone level so the
-        //                       player sees the upgrade path
-        java.util.Optional<String> effectiveDenyKey = bindDenyKey.isPresent()
-                ? bindDenyKey
-                : (isAtCapacity() ? java.util.Optional.of(capDenyKey()) : java.util.Optional.empty());
-        Component message = effectiveDenyKey.map(key -> switch (key) {
-            case "kindred.bind.deny.not_enough_xp" ->
-                    Component.translatable(key, Config.BOND_XP_LEVEL_COST.get());
-            case "kindred.bind.deny.pmmo_locked" -> Component.translatable(
-                    key,
-                    Component.translatable("pmmo." + Config.PMMO_SKILL.get()),
-                    Config.PMMO_START_LEVEL.get());
-            case "kindred.bind.deny.at_capacity" -> {
-                int currentBonds = ClientRosterData.bonds().size();
-                if (Config.PMMO_ENABLED.get()
-                        && Config.PMMO_MODE.get() == PmmoMode.LINEAR
-                        && currentBonds < Config.MAX_BONDS.get()) {
-                    // LINEAR formula: bond N unlocks at startLevel + (N-1) * increment.
-                    // Player has currentBonds; next slot unlocks at startLevel +
-                    // currentBonds * increment.
-                    int nextLevel = Config.PMMO_START_LEVEL.get()
-                            + currentBonds * Config.PMMO_INCREMENT_PER_BOND.get();
-                    yield Component.translatable("kindred.bind.deny.pmmo_next_unlock",
-                            Component.translatable("pmmo." + Config.PMMO_SKILL.get()),
-                            nextLevel);
-                }
-                yield Component.translatable(key);
-            }
-            default -> Component.translatable(key);
-        }).orElse(Component.translatable("kindred.screen.bind_hint"));
-        g.drawCenteredString(font, message,
-                claimBtnX + claimBtnW / 2,
-                claimBtnY + (CLAIM_BTN_H - font.lineHeight) / 2 + 1,
-                C_TEXT_MUTED);
-    }
-
-    /**
-     * Render Y for the Bind button. When {@code bondXpLevelCost > 0}, the button shifts
-     * down inside the footer to make room for a cost preview line above it.
-     * Otherwise it sits at the centered {@link #claimBtnY} position. Used by both
-     * the renderer and the click handler so hit-testing matches the visual.
-     */
-    private int currentBindBtnY() {
-        if (Config.BOND_XP_LEVEL_COST.get() > 0) {
-            return topPos + panelHeight - FOOTER_H + 1 + font.lineHeight + 1;
-        }
-        return claimBtnY;
-    }
-
-    private Entity findClaimCandidate() {
-        if (initialCandidate != null && initialCandidate.isRemoved()) {
-            initialCandidate = null;
-            bindCandidateConfirmed = null;
-        }
-        // Only render the Bind button once the server has confirmed eligibility —
-        // hides the button entirely for wild horses (where the local instanceof
-        // OwnableEntity check would otherwise pass).
-        if (Boolean.TRUE.equals(bindCandidateConfirmed)) return initialCandidate;
-        return null;
-    }
-
-    private Entity raycastEntity(LocalPlayer p) {
-        Vec3 eye = p.getEyePosition();
-        Vec3 look = p.getViewVector(1.0F);
-        Vec3 reach = eye.add(look.scale(CLAIM_RAYCAST_DISTANCE));
-        AABB box = p.getBoundingBox().expandTowards(look.scale(CLAIM_RAYCAST_DISTANCE)).inflate(1.0D);
-        EntityHitResult hit = ProjectileUtil.getEntityHitResult(
-                p, eye, reach, box,
-                e -> !e.isSpectator() && e.isPickable(),
-                CLAIM_RAYCAST_DISTANCE * CLAIM_RAYCAST_DISTANCE);
-        return hit != null ? hit.getEntity() : null;
-    }
-
-    /**
-     * Cheap, entity-only gates the client can verify without server help.
-     * Doesn't include the capacity check — capacity is roster state, not an
-     * entity property, and is checked separately by {@link #isAtCapacity}.
-     *
-     * <p>Owner UUID isn't synced to the client for {@code AbstractHorse}, so
-     * ownership is server-only — that's why a passing entity still needs the
-     * {@code C2SCheckBindCandidate} round-trip before showing the Bind button.</p>
-     */
-    private static boolean passesEntityGates(Entity e) {
-        if (!(e instanceof OwnableEntity)) return false;
-        // Tag checks intentionally omitted: we want the server to respond with
-        // NOT_ALLOWED so the footer can display the precise deny message instead
-        // of silently swallowing the candidate.
-        if (Config.REQUIRE_SADDLEABLE.get() && !(e instanceof Saddleable)) return false;
-        return true;
-    }
-
-    /** True if the player has no remaining bond slots — either at the hard cap
-     *  or PMMO-locked at zero. */
-    private static boolean isAtCapacity() {
-        int cap = ClientRosterData.effectiveMaxBonds();
-        return cap == 0 || ClientRosterData.bonds().size() >= cap;
-    }
-
-    /**
-     * Deny lang key for the current at-cap state — {@code pmmo_locked} when the
-     * effective cap is 0 (only reachable via PMMO returning a sub-startLevel
-     * skill, since the {@code maxBonds} config has a min of 1), otherwise the
-     * regular {@code at_capacity}. The renderer further refines {@code at_capacity}
-     * into the {@code pmmo_next_unlock} variant when LINEAR mode has more headroom.
-     */
-    private static String capDenyKey() {
-        return ClientRosterData.effectiveMaxBonds() == 0
-                ? "kindred.bind.deny.pmmo_locked"
-                : "kindred.bind.deny.at_capacity";
-    }
 
     /**
      * Each render frame, validate that the active row-hold is still in a valid
@@ -690,56 +310,10 @@ public final class RosterScreen extends Screen {
         }
     }
 
-    /**
-     * Client-side Bind button hold. Each render frame, validate the press state
-     * (candidate still bindable, cursor still on the button) and either fire the
-     * claim packet on completion or clear the timer on drift-off.
-     *
-     * <p>Wall-clock based ({@code System.currentTimeMillis}) because this is
-     * short, screen-local UX timing — not gameplay logic that needs to pause
-     * with the world.</p>
-     */
-    private void processBindHold(int mouseX, int mouseY) {
-        if (bindHoldStartMs == 0L) return;
-
-        Entity candidate = findClaimCandidate();
-        if (candidate == null) {
-            // Candidate vanished (e.g. server roster sync arrived between click
-            // and now, or the entity unloaded). Drop the press silently.
-            bindHoldStartMs = 0L;
-            return;
-        }
-
-        int btnY = currentBindBtnY();
-        if (!inBox(mouseX, mouseY, claimBtnX, btnY, claimBtnW, CLAIM_BTN_H)) {
-            // Cursor drifted off the button — cancel.
-            bindHoldStartMs = 0L;
-            return;
-        }
-
-        long elapsed = System.currentTimeMillis() - bindHoldStartMs;
-        if (elapsed >= BIND_HOLD_MS) {
-            PacketDistributor.sendToServer(new C2SClaimEntity(candidate.getUUID()));
-            // Clear the candidate immediately so the button disappears on completion;
-            // server replies via chat for success / failure either way. Avoids
-            // showing "Bond to this Wolf" after the wolf is already bonded.
-            initialCandidate = null;
-            bindCandidateConfirmed = null;
-            bindDenyKey = Optional.empty();
-            bindHoldStartMs = 0L;
-        }
-    }
-
-    /** 0..1 progress of the in-progress Bind button hold, 0 when not held. */
-    private float bindHoldProgress() {
-        if (bindHoldStartMs == 0L) return 0F;
-        return Math.min(1F, (System.currentTimeMillis() - bindHoldStartMs) / (float) BIND_HOLD_MS);
-    }
-
     private void renderRow(GuiGraphics g, BondView bond, int x, int y, int w, int mx, int my) {
         int rowH = ROW_HEIGHT - 2;
         boolean rowHover = mx >= x && mx < x + w && my >= y && my < y + rowH;
-        boolean selected = bond.bondId().equals(selectedBondId);
+        boolean selected = previewPane.isSelected(bond.bondId());
         int rowBg = selected ? C_ROW_SELECTED : (rowHover ? C_ROW_HOVER : C_ROW_BG);
         g.fill(x, y, x + w, y + rowH, rowBg);
 
@@ -921,69 +495,12 @@ public final class RosterScreen extends Screen {
         int mxAll = (int) mouseX;
         int myAll = (int) mouseY;
 
-        if (inBox(mxAll, myAll, claimBtnX, currentBindBtnY(), claimBtnW, CLAIM_BTN_H)) {
-            Entity candidate = findClaimCandidate();
-            if (candidate != null) {
-                // Start the hold timer instead of firing the claim packet
-                // immediately. processBindHold (driven each render frame) fires
-                // C2SClaimEntity when the hold completes; mouse-release, drag-off,
-                // or screen close clears the timer with no packet sent.
-                bindHoldStartMs = System.currentTimeMillis();
-                return true;
-            }
+        if (bindFooter.tryHandleClick(mxAll, myAll)) {
+            return true;
         }
 
-        // Pane action buttons: Move Up | Move Down (top), Rename (middle), Set Active
-        // (bottom). Click anywhere else commits any in-progress rename first, then
-        // proceeds normally.
-        BondView selectedView = currentSelection();
-        if (selectedView != null) {
-            int btnX = previewX + 4;
-            int btnW = PREVIEW_W - 8;
-            int moveHalfW = (btnW - ACTION_BTN_GAP) / 2;
-            int moveDownX = btnX + moveHalfW + ACTION_BTN_GAP;
-            int moveDownW = btnW - moveHalfW - ACTION_BTN_GAP;
-
-            // Compute selected bond's position so we can short-circuit clicks on a
-            // disabled-edge button (no packet sent if the bond is already at the top
-            // for Up, or bottom for Down).
-            List<BondView> bonds = ClientRosterData.bonds();
-            int bondIdx = -1;
-            for (int i = 0; i < bonds.size(); i++) {
-                if (bonds.get(i).bondId().equals(selectedView.bondId())) {
-                    bondIdx = i;
-                    break;
-                }
-            }
-
-            if (inBox(mxAll, myAll, btnX, moveBtnY(), moveHalfW, ACTION_BTN_H)) {
-                if (bondIdx > 0) {
-                    renameEditor.commitEditing();
-                    PacketDistributor.sendToServer(new C2SReorderBond(selectedView.bondId(), -1));
-                }
-                return true;
-            }
-            if (inBox(mxAll, myAll, moveDownX, moveBtnY(), moveDownW, ACTION_BTN_H)) {
-                if (bondIdx >= 0 && bondIdx < bonds.size() - 1) {
-                    renameEditor.commitEditing();
-                    PacketDistributor.sendToServer(new C2SReorderBond(selectedView.bondId(), 1));
-                }
-                return true;
-            }
-
-            if (Config.ALLOW_RENAME.get()
-                    && inBox(mxAll, myAll, btnX, renameBtnY(), btnW, ACTION_BTN_H)) {
-                renameEditor.commitEditing();
-                renameEditor.startEditing(selectedView);
-                return true;
-            }
-
-            if (!selectedView.isActive()
-                    && inBox(mxAll, myAll, btnX, setActiveBtnY(), btnW, ACTION_BTN_H)) {
-                renameEditor.commitEditing();
-                PacketDistributor.sendToServer(new C2SSetActivePet(Optional.of(selectedView.bondId())));
-                return true;
-            }
+        if (previewPane.tryHandleClick(mxAll, myAll)) {
+            return true;
         }
 
         renameEditor.commitEditing();
@@ -1061,8 +578,7 @@ public final class RosterScreen extends Screen {
                 }
             }
 
-            // Click landed on this row's body (not on any interactive control). Select it.
-            selectedBondId = bond.bondId();
+            previewPane.setSelected(bond.bondId());
             return true;
         }
 
@@ -1090,7 +606,7 @@ public final class RosterScreen extends Screen {
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
         if (button == 0) {
             if (rowHold != null) cancelRowHoldAndNotifyServer();
-            if (bindHoldStartMs != 0L) bindHoldStartMs = 0L;
+            bindFooter.onMouseReleased();
         }
         return super.mouseReleased(mouseX, mouseY, button);
     }

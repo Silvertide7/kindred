@@ -1,0 +1,51 @@
+name: Publish
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (skip real upload, post to test Discord webhook)"
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Setup JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build
+        run: ./gradlew build
+
+      - name: Publish
+        if: ${{ github.event_name == 'release' || inputs.dry_run == false }}
+        run: ./gradlew publishMods
+        env:
+          CF_TOKEN: ${{ secrets.CF_TOKEN }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_WEBHOOK_TEST_URL: ${{ secrets.DISCORD_WEBHOOK_TEST_URL }}
+
+      - name: Publish [test]
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == true }}
+        run: ./gradlew publishMods
+        env:
+          PUBLISH_DRY_RUN: 'true'
+          CF_TOKEN: ${{ secrets.CF_TOKEN }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_WEBHOOK_TEST_URL: ${{ secrets.DISCORD_WEBHOOK_TEST_URL }}

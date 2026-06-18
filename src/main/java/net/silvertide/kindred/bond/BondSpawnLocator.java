@@ -10,16 +10,22 @@ import net.minecraft.world.entity.EntityDimensions;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.CampfireBlock;
+import net.minecraft.world.level.block.CarpetBlock;
+import net.minecraft.world.level.block.DirtPathBlock;
+import net.minecraft.world.level.block.FarmBlock;
+import net.minecraft.world.level.block.SnowLayerBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.shapes.VoxelShape;
 import net.silvertide.kindred.config.Config;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalDouble;
 
 public final class BondSpawnLocator {
     private BondSpawnLocator() {}
@@ -107,15 +113,39 @@ public final class BondSpawnLocator {
             BlockPos top = new BlockPos(start.getX(), feetY, start.getZ());
             BlockPos floor = top.below();
             BlockState floorState = level.getBlockState(floor);
-            if (!floorState.isFaceSturdy(level, floor, Direction.UP)) continue;
+
+            OptionalDouble surfaceY = standableSurfaceY(level, floor, floorState);
+            if (surfaceY.isEmpty()) continue;
             if (isHazardousFloor(floorState)) return Optional.empty();
-            AABB bbox = dims.makeBoundingBox(top.getX() + 0.5D, top.getY(), top.getZ() + 0.5D);
+
+            double y = surfaceY.getAsDouble();
+            AABB bbox = dims.makeBoundingBox(top.getX() + 0.5D, y, top.getZ() + 0.5D);
             if (!level.noCollision(bbox)) return Optional.empty();
             if (hasLavaInOrNear(level, bbox)) return Optional.empty();
             if (!allowWater && hasFluidInPocket(level, bbox, FluidTags.WATER)) return Optional.empty();
-            return Optional.of(new Vec3(top.getX() + 0.5D, top.getY(), top.getZ() + 0.5D));
+            return Optional.of(new Vec3(top.getX() + 0.5D, y, top.getZ() + 0.5D));
         }
         return Optional.empty();
+    }
+
+    private static OptionalDouble standableSurfaceY(ServerLevel level, BlockPos floor, BlockState floorState) {
+        if (floorState.isFaceSturdy(level, floor, Direction.UP)) {
+            return OptionalDouble.of(floor.getY() + 1.0D);
+        }
+        if (isWalkableCover(floorState)) {
+            VoxelShape shape = floorState.getCollisionShape(level, floor);
+            double coverTop = shape.isEmpty() ? 0.0D : shape.max(Direction.Axis.Y);
+            return OptionalDouble.of(floor.getY() + coverTop);
+        }
+        return OptionalDouble.empty();
+    }
+
+    private static boolean isWalkableCover(BlockState state) {
+        var block = state.getBlock();
+        return block instanceof SnowLayerBlock
+                || block instanceof CarpetBlock
+                || block instanceof FarmBlock
+                || block instanceof DirtPathBlock;
     }
 
     private static boolean isHazardousFloor(BlockState state) {

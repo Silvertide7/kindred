@@ -163,6 +163,7 @@ publishMods {
     curseforge {
         projectId = "${curseforge_project}"
         accessToken = System.getenv("CF_TOKEN")
+        projectSlug = "kindred"
 
         minecraftVersions.add(minecraft_version)
         javaVersions.add(JavaVersion.VERSION_21)

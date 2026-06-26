@@ -279,13 +279,15 @@ public final class RosterScreen extends Screen {
         int rowLeftX = leftPos + ROW_PAD;
         int buttonHeight = ROW_HEIGHT - 10;
         int buttonY = rowY + 4;
+        boolean dismissEnabled = Config.ALLOW_DISMISSING.get();
         int summonButtonWidth = 50;
         int dismissButtonWidth = 50;
         int breakSmallButtonWidth = 16;
         int rowRightEdge = rowLeftX + ROW_W - 4;
         int breakSmallButtonX = rowRightEdge - breakSmallButtonWidth;
         int dismissButtonX = breakSmallButtonX - dismissButtonWidth - 4;
-        int summonButtonX = dismissButtonX - summonButtonWidth - 4;
+        int summonButtonX = (dismissEnabled ? dismissButtonX : breakSmallButtonX) - summonButtonWidth - 4;
+        int confirmButtonX = dismissEnabled ? dismissButtonX : summonButtonX;
 
         int heldButtonX;
         int heldButtonWidth;
@@ -296,10 +298,8 @@ public final class RosterScreen extends Screen {
             heldButtonX = dismissButtonX;
             heldButtonWidth = dismissButtonWidth;
         } else {
-            // BREAK: the Confirm button replaces both Dismiss and X while armed,
-            // spanning from dismissButtonX out to the right edge.
-            heldButtonX = dismissButtonX;
-            heldButtonWidth = rowRightEdge - dismissButtonX;
+            heldButtonX = confirmButtonX;
+            heldButtonWidth = rowRightEdge - confirmButtonX;
         }
 
         if (!inBox(mouseX, mouseY, heldButtonX, buttonY, heldButtonWidth, buttonHeight)) {
@@ -351,35 +351,26 @@ public final class RosterScreen extends Screen {
         g.drawString(font, subtitle, textX, y + ROW_SUBTITLE_Y_OFFSET, C_TEXT_MUTED);
 
         int btnH = ROW_BTN_H;
-        // Buttons align with the top text line, not centered on the full row, so the
-        // subtitle reads cleanly below them.
         int btnY = y + 2;
         int rightEdge = x + w - 4;
+        boolean dismissEnabled = Config.ALLOW_DISMISSING.get();
         int breakSmallX = rightEdge - ROW_BREAK_W;
         int dismissX = breakSmallX - ROW_BTN_GAP - ROW_DISMISS_W;
-        int summonX = dismissX - ROW_BTN_GAP - ROW_SUMMON_W;
+        int summonX = (dismissEnabled ? dismissX : breakSmallX) - ROW_BTN_GAP - ROW_SUMMON_W;
         int summonW = ROW_SUMMON_W;
         int dismissW = ROW_DISMISS_W;
         int breakSmallW = ROW_BREAK_W;
 
-        // Armed state: TTL gate, OR an in-progress break-confirm hold for this bond
-        // (so the Confirm button doesn't disappear mid-hold if the arm TTL expires).
         boolean breakHoldActive = rowHold != null
                 && rowHold.bondId().equals(bond.bondId())
                 && rowHold.action() == RowHoldAction.BREAK;
         boolean armed = bond.bondId().equals(breakArmedBondId)
                 && (System.currentTimeMillis() < breakArmedExpiresAt || breakHoldActive);
 
-        boolean summonDisabled = ClientRosterData.isGlobalSummonOnCooldown()
-                || ClientRosterData.isOnCooldown(bond)
-                || ClientRosterData.isRevivalPending(bond);
-        boolean summonHover = !summonDisabled && inBox(mx, my, summonX, btnY, summonW, btnH);
+        int confirmX = dismissEnabled ? dismissX : summonX;
+        int confirmW = rightEdge - confirmX;
+        boolean summonHiddenByConfirm = armed && !dismissEnabled;
 
-        // Hold progress is server-driven: HoldActionState alone is the source
-        // of truth. If a hold is active and targets this row's bond, map its
-        // action onto the corresponding button's fill amount. SUMMON_KEYBIND
-        // intentionally produces no row visual — it's drawn by HoldActionOverlay
-        // on the HUD instead.
         float summonHoldProgress = 0F;
         float dismissHoldProgress = 0F;
         float breakHoldProgress = 0F;
@@ -393,89 +384,82 @@ public final class RosterScreen extends Screen {
             }
         }
 
-        int summonColor = summonDisabled
-                ? C_BTN_SUMMON_DISABLED
-                : (summonHover ? C_BTN_SUMMON_HOVER : C_BTN_SUMMON);
-        // Disabled-by-time states (revival, per-bond cooldown, global cooldown) all
-        // share the same UI: no button label, radial sweep centered, precise time on
-        // hover. Revival is checked first since "the pet is dead" outranks "rate-
-        // limited"; otherwise we pick whichever cooldown has more time left so the
-        // wedge matches the actual block.
-        long sweepRemainingMs = 0L;
-        long sweepTotalMs = 0L;
-        Component tooltipText = null;
-        Component summonLabel;
-        if (ClientRosterData.isRevivalPending(bond)) {
-            sweepRemainingMs = ClientRosterData.revivalRemainingMsNow(bond);
-            sweepTotalMs = Config.revivalCooldownMs();
-            tooltipText = Component.translatable("kindred.screen.respawning",
-                    formatDurationCoarse(sweepRemainingMs));
-            summonLabel = Component.empty();
-        } else if (summonDisabled) {
-            long perBondRemaining = ClientRosterData.bondCooldownRemainingMsNow(bond);
-            long perBondTotal = Config.summonCooldownMs();
-            long globalRemaining = ClientRosterData.globalCooldownRemainingMsNow();
-            long globalTotal = Config.summonGlobalCooldownMs();
-            if (perBondRemaining >= globalRemaining) {
-                sweepRemainingMs = perBondRemaining;
-                sweepTotalMs = perBondTotal;
+        if (!summonHiddenByConfirm) {
+            boolean summonDisabled = ClientRosterData.isGlobalSummonOnCooldown()
+                    || ClientRosterData.isOnCooldown(bond)
+                    || ClientRosterData.isRevivalPending(bond);
+            boolean summonHover = !summonDisabled && inBox(mx, my, summonX, btnY, summonW, btnH);
+
+            int summonColor = summonDisabled
+                    ? C_BTN_SUMMON_DISABLED
+                    : (summonHover ? C_BTN_SUMMON_HOVER : C_BTN_SUMMON);
+            long sweepRemainingMs = 0L;
+            long sweepTotalMs = 0L;
+            Component tooltipText = null;
+            Component summonLabel;
+            if (ClientRosterData.isRevivalPending(bond)) {
+                sweepRemainingMs = ClientRosterData.revivalRemainingMsNow(bond);
+                sweepTotalMs = Config.revivalCooldownMs();
+                tooltipText = Component.translatable("kindred.screen.respawning",
+                        formatDurationCoarse(sweepRemainingMs));
+                summonLabel = Component.empty();
+            } else if (summonDisabled) {
+                long perBondRemaining = ClientRosterData.bondCooldownRemainingMsNow(bond);
+                long perBondTotal = Config.summonCooldownMs();
+                long globalRemaining = ClientRosterData.globalCooldownRemainingMsNow();
+                long globalTotal = Config.summonGlobalCooldownMs();
+                if (perBondRemaining >= globalRemaining) {
+                    sweepRemainingMs = perBondRemaining;
+                    sweepTotalMs = perBondTotal;
+                } else {
+                    sweepRemainingMs = globalRemaining;
+                    sweepTotalMs = globalTotal;
+                }
+                tooltipText = Component.literal(formatDurationCoarse(sweepRemainingMs));
+                summonLabel = Component.empty();
             } else {
-                sweepRemainingMs = globalRemaining;
-                sweepTotalMs = globalTotal;
+                summonLabel = Component.translatable("kindred.screen.summon");
             }
-            tooltipText = Component.literal(formatDurationCoarse(sweepRemainingMs));
-            summonLabel = Component.empty();
-        } else {
-            summonLabel = Component.translatable("kindred.screen.summon");
-        }
-        int summonTextColor = summonDisabled ? C_BTN_TEXT_DISABLED : C_TEXT;
-        drawButton(g, font, summonX, btnY, summonW, btnH,
-                summonLabel,
-                summonColor,
-                summonHoldProgress,
-                summonTextColor);
-        if (sweepTotalMs > 0L && sweepRemainingMs > 0L) {
-            float progress = Math.min(1F, sweepRemainingMs / (float) sweepTotalMs);
-            int pieCx = summonX + summonW / 2;
-            int pieCy = btnY + btnH / 2;
-            drawRadialSweep(g, pieCx, pieCy, C_PIE_RADIUS, progress, C_PIE_FILL);
-            // Long cooldowns (20m+) make the wedge motion imperceptible, so surface
-            // precise text on hover. Deferred via setTooltipForNextRenderPass so it
-            // renders above the row scissor and any later panel content.
-            if (tooltipText != null && inBox(mx, my, summonX, btnY, summonW, btnH)) {
-                setTooltipForNextRenderPass(tooltipText);
+            int summonTextColor = summonDisabled ? C_BTN_TEXT_DISABLED : C_TEXT;
+            drawButton(g, font, summonX, btnY, summonW, btnH,
+                    summonLabel,
+                    summonColor,
+                    summonHoldProgress,
+                    summonTextColor);
+            if (sweepTotalMs > 0L && sweepRemainingMs > 0L) {
+                float progress = Math.min(1F, sweepRemainingMs / (float) sweepTotalMs);
+                int pieCx = summonX + summonW / 2;
+                int pieCy = btnY + btnH / 2;
+                drawRadialSweep(g, pieCx, pieCy, C_PIE_RADIUS, progress, C_PIE_FILL);
+                if (tooltipText != null && inBox(mx, my, summonX, btnY, summonW, btnH)) {
+                    setTooltipForNextRenderPass(tooltipText);
+                }
             }
         }
 
         if (armed) {
-            int confirmX = dismissX;
-            int confirmW = rightEdge - confirmX;
             boolean confirmHover = inBox(mx, my, confirmX, btnY, confirmW, btnH);
             drawButton(g, font, confirmX, btnY, confirmW, btnH,
                     Component.translatable("kindred.screen.break_confirm"),
                     confirmHover ? C_BTN_BREAK_CONFIRM : C_BTN_BREAK_HOVER,
                     breakHoldProgress);
         } else {
-            // Dismiss only makes sense for an entity that's actually in the world.
-            // Revival-pending pets are dead; not-loaded pets are already stored.
-            boolean dismissDisabled = ClientRosterData.isRevivalPending(bond) || !bond.loaded();
-            boolean dismissHover = !dismissDisabled && inBox(mx, my, dismissX, btnY, dismissW, btnH);
-            // Break is gated on revival too: the whole row quiets down together
-            // while a dead pet is respawning, matching the server gate in
-            // HoldEligibility.checkBreak.
+            if (dismissEnabled) {
+                boolean dismissDisabled = ClientRosterData.isRevivalPending(bond) || !bond.loaded();
+                boolean dismissHover = !dismissDisabled && inBox(mx, my, dismissX, btnY, dismissW, btnH);
+                int dismissColor = dismissDisabled
+                        ? C_BTN_DISMISS_DISABLED
+                        : (dismissHover ? C_BTN_DISMISS_HOVER : C_BTN_DISMISS);
+                int dismissTextColor = dismissDisabled ? C_BTN_TEXT_DISABLED : C_TEXT;
+                drawButton(g, font, dismissX, btnY, dismissW, btnH,
+                        Component.translatable("kindred.screen.dismiss"),
+                        dismissColor,
+                        dismissHoldProgress,
+                        dismissTextColor);
+            }
+
             boolean breakDisabled = ClientRosterData.isRevivalPending(bond);
             boolean breakHover = !breakDisabled && inBox(mx, my, breakSmallX, btnY, breakSmallW, btnH);
-
-            int dismissColor = dismissDisabled
-                    ? C_BTN_DISMISS_DISABLED
-                    : (dismissHover ? C_BTN_DISMISS_HOVER : C_BTN_DISMISS);
-            int dismissTextColor = dismissDisabled ? C_BTN_TEXT_DISABLED : C_TEXT;
-            drawButton(g, font, dismissX, btnY, dismissW, btnH,
-                    Component.translatable("kindred.screen.dismiss"),
-                    dismissColor,
-                    dismissHoldProgress,
-                    dismissTextColor);
-
             int breakColor = breakDisabled
                     ? C_BTN_BREAK_DISABLED
                     : (breakHover ? C_BTN_BREAK_HOVER : C_BTN_BREAK);
@@ -518,27 +502,24 @@ public final class RosterScreen extends Screen {
             int dismissW = ROW_DISMISS_W;
             int breakSmallW = ROW_BREAK_W;
             int rightEdge = x + ROW_W - 4;
+            boolean dismissEnabled = Config.ALLOW_DISMISSING.get();
             int breakSmallX = rightEdge - breakSmallW;
             int dismissX = breakSmallX - ROW_BTN_GAP - dismissW;
-            int summonX = dismissX - ROW_BTN_GAP - summonW;
+            int summonX = (dismissEnabled ? dismissX : breakSmallX) - ROW_BTN_GAP - summonW;
 
             BondView bond = bonds.get(i);
             int mx = (int) mouseX;
             int my = (int) mouseY;
             long now = System.currentTimeMillis();
             boolean armed = bond.bondId().equals(breakArmedBondId) && now < breakArmedExpiresAt;
+            boolean summonHiddenByConfirm = armed && !dismissEnabled;
 
             // Skip rows whose vertical area the click isn't on.
             if (my < rowY || my >= rowY + rowH) continue;
             // And whose horizontal area the click isn't on.
             if (mx < x || mx >= x + ROW_W) continue;
 
-            if (inBox(mx, my, summonX, btnY, summonW, btnH)) {
-                // Summon button clicked. Set the local press tracker so we can
-                // detect release / drag-off / scroll-out, and ask the server to
-                // start the hold. Server validates eligibility (cooldowns,
-                // revival state, etc.) and either pushes S2CHoldStart or sends
-                // a vanilla action-bar deny — no client pre-check.
+            if (!summonHiddenByConfirm && inBox(mx, my, summonX, btnY, summonW, btnH)) {
                 rowHold = new RowHold(bond.bondId(), RowHoldAction.SUMMON);
                 PacketDistributor.sendToServer(new C2SRequestHold(
                         HoldManager.Action.SUMMON_BOND, java.util.Optional.of(bond.bondId())));
@@ -546,22 +527,16 @@ public final class RosterScreen extends Screen {
             }
 
             if (armed) {
-                int confirmX = dismissX;
+                int confirmX = dismissEnabled ? dismissX : summonX;
                 int confirmW = rightEdge - confirmX;
                 if (inBox(mx, my, confirmX, btnY, confirmW, btnH)) {
-                    // Break confirm button clicked (visible only after the X
-                    // arms it). Same hold contract as summon/dismiss; release
-                    // before completion cancels via mouseReleased.
                     rowHold = new RowHold(bond.bondId(), RowHoldAction.BREAK);
                     PacketDistributor.sendToServer(new C2SRequestHold(
                             HoldManager.Action.BREAK, java.util.Optional.of(bond.bondId())));
                     return true;
                 }
             } else {
-                if (inBox(mx, my, dismissX, btnY, dismissW, btnH)) {
-                    // Dismiss button clicked. Server validates that the pet is
-                    // loaded and within range — if not, the action-bar message
-                    // tells the player why.
+                if (dismissEnabled && inBox(mx, my, dismissX, btnY, dismissW, btnH)) {
                     rowHold = new RowHold(bond.bondId(), RowHoldAction.DISMISS);
                     PacketDistributor.sendToServer(new C2SRequestHold(
                             HoldManager.Action.DISMISS, java.util.Optional.of(bond.bondId())));

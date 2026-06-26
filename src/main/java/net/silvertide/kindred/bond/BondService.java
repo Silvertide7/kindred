@@ -170,6 +170,7 @@ public final class BondService {
     }
 
     public static DismissResult dismiss(ServerPlayer player, UUID bondId) {
+        if (!Config.ALLOW_DISMISSING.get()) return DismissResult.DISABLED;
         BondRoster roster = player.getData(ModAttachments.BOND_ROSTER.get());
         Optional<Bond> bondOpt = roster.get(bondId);
         if (bondOpt.isEmpty()) return DismissResult.NO_SUCH_BOND;

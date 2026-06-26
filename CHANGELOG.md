@@ -1,3 +1,3 @@
-## 1.0.3
+## 1.0.4
 ---
-- Allow pets to be summoned onto partial collision blocks, like snow and carpet.
+- New config option: dismissEnabled. Defaults to true (current funcionalty). When false you can no longer dismiss pets.

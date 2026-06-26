@@ -14,6 +14,7 @@ import net.silvertide.kindred.bond.HoldEligibility;
 import net.silvertide.kindred.bond.HoldManager;
 import net.silvertide.kindred.client.data.ClientRosterData;
 import net.silvertide.kindred.client.screen.RosterScreen;
+import net.silvertide.kindred.config.Config;
 import net.silvertide.kindred.network.BondView;
 import net.silvertide.kindred.network.packet.C2SCancelHold;
 import net.silvertide.kindred.network.packet.C2SRequestHold;
@@ -84,7 +85,7 @@ public final class KeybindHandler {
      * the same dimension or unloaded entirely).
      */
     private static void sendRequestForCurrentIntent() {
-        BondView nearbyActivePet = findNearbyActivePet();
+        BondView nearbyActivePet = Config.ALLOW_DISMISSING.get() ? findNearbyActivePet() : null;
         if (nearbyActivePet != null) {
             PacketDistributor.sendToServer(new C2SRequestHold(
                     HoldManager.Action.DISMISS, Optional.of(nearbyActivePet.bondId())));

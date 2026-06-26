@@ -116,6 +116,14 @@ public final class Config {
                      "Seconds to hold the summon keybind (or screen Dismiss button) to confirm dismissing the active pet.")
             .defineInRange("holdToDismissSeconds", 1.0D, 0.1D, 10.0D);
 
+    public static final ModConfigSpec.BooleanValue ALLOW_DISMISSING = BUILDER
+            .comment("",
+                     "If true (default), bonded pets can be dismissed: holding the summon keybind near a " +
+                     "loaded pet recalls it without breaking the bond, and the roster screen shows a Dismiss button. " +
+                     "If false, dismissing is disabled entirely — the Dismiss button is hidden from the roster screen " +
+                     "and holding the keybind near a pet summons it instead of dismissing it.")
+            .define("allowDismissing", true);
+
     public static final ModConfigSpec.BooleanValue CANCEL_HOLD_ON_DAMAGE = BUILDER
             .comment("",
                      "If true, taking damage cancels any in-progress summon/dismiss hold (mirrors vanilla bow-draw / eating interrupt).")

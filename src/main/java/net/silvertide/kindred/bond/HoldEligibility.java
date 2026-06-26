@@ -56,6 +56,7 @@ public final class HoldEligibility {
     }
 
     private static Result checkDismiss(ServerPlayer player, UUID bondId) {
+        if (!Config.ALLOW_DISMISSING.get()) return new Result.Denied("kindred.dismiss.disabled");
         BondRoster roster = player.getData(ModAttachments.BOND_ROSTER.get());
         Optional<Bond> maybeBond = roster.get(bondId);
         if (maybeBond.isEmpty()) return new Result.Denied("kindred.dismiss.no_such_bond");

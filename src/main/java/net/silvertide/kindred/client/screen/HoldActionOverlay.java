@@ -6,6 +6,7 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
 import net.silvertide.kindred.bond.HoldManager;
 import net.silvertide.kindred.client.data.HoldActionState;
+import net.silvertide.kindred.config.ClientConfig;
 
 /**
  * HUD overlay for keybind-initiated holds (DISMISS, SUMMON_KEYBIND).
@@ -50,10 +51,12 @@ public final class HoldActionOverlay {
         int screenHeight = minecraft.getWindow().getGuiScaledHeight();
 
         // Tucked above the hotbar / XP bar / health icons rather than mid-screen.
-        // sh - 50 keeps the bar (and its label 12px above) clear of the survival
-        // status bars at all GUI scales.
-        int barX = (screenWidth - BAR_WIDTH) / 2;
-        int barY = screenHeight - 50;
+        // sh - 70 keeps the bar (and its label 12px above) clear of the survival
+        // status bars at all GUI scales. Player-adjustable via client config.
+        int offsetX = ClientConfig.HOLD_BAR_OFFSET_X.get();
+        int offsetY = ClientConfig.HOLD_BAR_OFFSET_Y.get();
+        int barX = (screenWidth - BAR_WIDTH) / 2 + offsetX;
+        int barY = screenHeight - 70 + offsetY;
 
         HoldManager.Action action = HoldActionState.action();
         Component label = switch (action) {
@@ -61,7 +64,7 @@ public final class HoldActionOverlay {
             case BREAK -> Component.translatable("kindred.hud.breaking");
             case SUMMON_KEYBIND, SUMMON_BOND -> Component.translatable("kindred.hud.summoning");
         };
-        graphics.drawCenteredString(minecraft.font, label, screenWidth / 2, barY - 12, C_LABEL_TEXT);
+        graphics.drawCenteredString(minecraft.font, label, screenWidth / 2 + offsetX, barY - 12, C_LABEL_TEXT);
 
         // Border + empty track.
         graphics.fill(barX - 1, barY - 1, barX + BAR_WIDTH + 1, barY + BAR_HEIGHT + 1, C_BAR_BORDER);

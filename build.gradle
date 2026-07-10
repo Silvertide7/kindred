@@ -159,17 +159,24 @@ publishMods {
     version = "${minecraft_version}-${mod_version}"
     type = STABLE
     displayName = "kindred-${minecraft_version}-${mod_version}"
+    dryRun = System.getenv("PUBLISH_DRY_RUN") == "true"
 
     curseforge {
         projectId = "${curseforge_project}"
-        accessToken = System.getenv("CF_TOKEN")
         projectSlug = "kindred"
+        accessToken = providers.environmentVariable("CF_TOKEN")
 
         minecraftVersions.add(minecraft_version)
         javaVersions.add(JavaVersion.VERSION_21)
 
         clientRequired = true
         serverRequired = true
+    }
+
+    modrinth {
+        projectId = "6M5GinSS"
+        accessToken = providers.environmentVariable("MODRINTH_TOKEN")
+        minecraftVersions.add(minecraft_version)
     }
 
     discord {

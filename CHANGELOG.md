@@ -1,3 +1,3 @@
-## 1.0.4
+## 1.0.5
 ---
-- New config option: dismissEnabled. Defaults to true (current funcionalty). When false you can no longer dismiss pets.
+- Add client configs for the summon / dismiss bar and move it up 20px

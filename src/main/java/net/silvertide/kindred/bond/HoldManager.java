@@ -5,6 +5,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.network.PacketDistributor;
+import net.silvertide.kindred.bond.bond_results.BreakResult;
 import net.silvertide.kindred.bond.bond_results.SummonResult;
 import net.silvertide.kindred.network.ServerPacketHandler;
 import net.silvertide.kindred.network.packet.S2CHoldStart;
@@ -95,7 +96,9 @@ public final class HoldManager {
                 ServerPacketHandler.sendRosterSync(player);
             }
             case BREAK -> {
-                BondService.breakBond(player, hold.bondId());
+                if (BondService.breakBond(player, hold.bondId()) == BreakResult.RELEASE_FAILED) {
+                    player.displayClientMessage(Component.translatable("kindred.break.release_failed"), true);
+                }
                 ServerPacketHandler.sendRosterSync(player);
             }
         }

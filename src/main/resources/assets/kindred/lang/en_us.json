@@ -50,10 +50,12 @@
   "kindred.summon.no_space": "Not enough space to summon here",
   "kindred.summon.player_airborne": "Cannot summon while airborne",
   "kindred.summon.cross_dim_blocked": "Cross-dimensional summons are disabled",
+  "kindred.summon.spawn_failed": "The pet could not be summoned",
   "kindred.dismiss.no_such_bond": "That bond no longer exists",
   "kindred.dismiss.not_loaded": "Pet isn't loaded in the world",
   "kindred.dismiss.reviving": "Pet is respawning",
   "kindred.dismiss.disabled": "Dismissing is disabled",
   "kindred.break.no_such_bond": "That bond no longer exists",
+  "kindred.break.release_failed": "Not enough space to release the pet — move somewhere open and try again",
   "kindred.break.reviving": "Pet is respawning"
 }

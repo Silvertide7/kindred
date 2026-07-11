@@ -6,6 +6,7 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -40,18 +41,26 @@ public final class EntityEvents {
         Bonded bonded = entity.getData(ModAttachments.BONDED.get());
         KindredSavedData saved = KindredSavedData.get(level);
 
-        if (saved.isPendingDisband(bonded.bondId())) {
+        int worldRevision = saved.getRevision(bonded.bondId());
+        if (worldRevision == 0) {
             entity.removeData(ModAttachments.BONDED.get());
-            saved.clearPendingDisband(bonded.bondId());
             saved.clearBond(bonded.bondId());
+            Kindred.LOGGER.info("[kindred] released orphaned copy of former bond {} (no revision on record)",
+                    bonded.bondId());
             return;
         }
 
-        int worldRevision = saved.getRevision(bonded.bondId());
         if (bonded.revision() < worldRevision) {
             event.setCanceled(true);
             Kindred.LOGGER.info("[kindred] cancelled stale duplicate of bond {} (entity rev {} < world rev {})",
                     bonded.bondId(), bonded.revision(), worldRevision);
+            return;
+        }
+
+        if (saved.isPendingDisband(bonded.bondId())) {
+            entity.removeData(ModAttachments.BONDED.get());
+            saved.clearPendingDisband(bonded.bondId());
+            saved.clearBond(bonded.bondId());
             return;
         }
 
@@ -106,8 +115,9 @@ public final class EntityEvents {
                 owner.setData(ModAttachments.BOND_ROSTER.get(), roster.with(updated));
             });
         } else {
-            KindredSavedData.get(level).putOfflineSnapshot(bonded.bondId(),
-                    new OfflineSnapshot(deathNbt, dim, pos));
+            KindredSavedData saved = KindredSavedData.get(level);
+            saved.putOfflineSnapshot(bonded.bondId(), new OfflineSnapshot(deathNbt, dim, pos));
+            saved.markDiedOffline(bonded.bondId(), now);
         }
     }
 
@@ -135,6 +145,8 @@ public final class EntityEvents {
     }
 
     private static void snapshotEntity(ServerLevel level, Entity entity, Bonded bonded) {
+        if (entity instanceof LivingEntity living && living.isDeadOrDying()) return;
+
         ServerPlayer owner = level.getServer().getPlayerList().getPlayer(bonded.ownerUUID());
 
 

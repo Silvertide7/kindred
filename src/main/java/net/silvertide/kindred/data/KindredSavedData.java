@@ -25,23 +25,26 @@ public class KindredSavedData extends SavedData {
     private final Set<UUID> pendingDisbands;
     private final Set<UUID> killedWhileOffline;
     private final Map<UUID, OfflineSnapshot> offlineSnapshots;
+    private final Map<UUID, Long> diedWhileOffline;
 
     private KindredSavedData() {
-        this(new HashMap<>(), new LinkedHashSet<>(), new LinkedHashSet<>(), new HashMap<>());
+        this(new HashMap<>(), new LinkedHashSet<>(), new LinkedHashSet<>(), new HashMap<>(), new HashMap<>());
     }
 
-    private KindredSavedData(Map<UUID, Integer> revisions, Set<UUID> pending, Set<UUID> killed, Map<UUID, OfflineSnapshot> snapshots) {
+    private KindredSavedData(Map<UUID, Integer> revisions, Set<UUID> pending, Set<UUID> killed, Map<UUID, OfflineSnapshot> snapshots, Map<UUID, Long> diedOffline) {
         this.revisionByBondId = revisions;
         this.pendingDisbands = pending;
         this.killedWhileOffline = killed;
         this.offlineSnapshots = snapshots;
+        this.diedWhileOffline = diedOffline;
     }
 
     private record Snapshot(
             Map<UUID, Integer> revisionByBondId,
             Set<UUID> pendingDisbands,
             Set<UUID> killedWhileOffline,
-            Map<UUID, OfflineSnapshot> offlineSnapshots
+            Map<UUID, OfflineSnapshot> offlineSnapshots,
+            Map<UUID, Long> diedWhileOffline
     ) {
         static final Codec<Snapshot> CODEC = RecordCodecBuilder.create(instance -> instance.group(
                 Codec.unboundedMap(UUIDUtil.STRING_CODEC, Codec.INT)
@@ -57,7 +60,10 @@ public class KindredSavedData extends SavedData {
                         .forGetter(Snapshot::killedWhileOffline),
                 Codec.unboundedMap(UUIDUtil.STRING_CODEC, OfflineSnapshot.CODEC)
                         .fieldOf("offline_snapshots")
-                        .forGetter(Snapshot::offlineSnapshots)
+                        .forGetter(Snapshot::offlineSnapshots),
+                Codec.unboundedMap(UUIDUtil.STRING_CODEC, Codec.LONG)
+                        .optionalFieldOf("died_offline", Map.of())
+                        .forGetter(Snapshot::diedWhileOffline)
         ).apply(instance, Snapshot::new));
     }
 
@@ -78,13 +84,14 @@ public class KindredSavedData extends SavedData {
                 new HashMap<>(s.revisionByBondId()),
                 new LinkedHashSet<>(s.pendingDisbands()),
                 new LinkedHashSet<>(s.killedWhileOffline()),
-                new HashMap<>(s.offlineSnapshots())
+                new HashMap<>(s.offlineSnapshots()),
+                new HashMap<>(s.diedWhileOffline())
         );
     }
 
     @Override
     public CompoundTag save(CompoundTag tag, HolderLookup.Provider lookup) {
-        Snapshot s = new Snapshot(revisionByBondId, pendingDisbands, killedWhileOffline, offlineSnapshots);
+        Snapshot s = new Snapshot(revisionByBondId, pendingDisbands, killedWhileOffline, offlineSnapshots, diedWhileOffline);
         Snapshot.CODEC.encodeStart(NbtOps.INSTANCE, s)
                 .resultOrPartial(err -> Kindred.LOGGER.error("Failed to save {}: {}", FILE_ID, err))
                 .ifPresent(t -> tag.merge((CompoundTag) t));
@@ -107,6 +114,7 @@ public class KindredSavedData extends SavedData {
         pendingDisbands.remove(bondId);
         killedWhileOffline.remove(bondId);
         offlineSnapshots.remove(bondId);
+        diedWhileOffline.remove(bondId);
         setDirty();
     }
 
@@ -132,6 +140,17 @@ public class KindredSavedData extends SavedData {
 
     public void clearKilledOffline(UUID bondId) {
         if (killedWhileOffline.remove(bondId)) setDirty();
+    }
+
+    public void markDiedOffline(UUID bondId, long timestampMs) {
+        diedWhileOffline.put(bondId, timestampMs);
+        setDirty();
+    }
+
+    public Optional<Long> takeDiedOffline(UUID bondId) {
+        Long diedAt = diedWhileOffline.remove(bondId);
+        if (diedAt != null) setDirty();
+        return Optional.ofNullable(diedAt);
     }
 
     public void putOfflineSnapshot(UUID bondId, OfflineSnapshot snapshot) {

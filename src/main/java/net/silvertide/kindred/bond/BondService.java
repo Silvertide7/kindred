@@ -148,7 +148,12 @@ public final class BondService {
         Optional<Entity> existing = BondEntityIndex.get().find(bondId);
         Bond bond = maybeBond.get();
         if (existing.isEmpty() && (bond.dismissed() || bond.diedAt().isPresent())) {
-            materializeFresh(player, bond, level, saved);
+            SummonResult release = materializeFresh(player, bond, level, saved);
+            if (!release.isSuccess()) {
+                Kindred.LOGGER.warn("[kindred] break of bond {} aborted: could not release the pet ({})",
+                        bondId, release);
+                return BreakResult.RELEASE_FAILED;
+            }
             existing = BondEntityIndex.get().find(bondId);
         }
 
@@ -161,7 +166,6 @@ public final class BondService {
             BondEntityIndex.get().untrack(bondId);
             saved.clearBond(bondId);
         } else {
-            saved.clearBond(bondId);
             saved.markPendingDisband(bondId);
         }
 

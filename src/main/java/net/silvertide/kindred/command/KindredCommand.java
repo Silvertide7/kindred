@@ -26,6 +26,7 @@ import net.silvertide.kindred.bond.bond_results.BreakResult;
 import net.silvertide.kindred.bond.bond_results.ClaimResult;
 import net.silvertide.kindred.bond.bond_results.DismissResult;
 import net.silvertide.kindred.bond.bond_results.SummonResult;
+import net.silvertide.kindred.network.ServerPacketHandler;
 import net.silvertide.kindred.registry.ModAttachments;
 
 import java.util.Comparator;
@@ -166,6 +167,7 @@ public final class KindredCommand {
 
         BondRoster updated = roster.withActive(next);
         player.setData(ModAttachments.BOND_ROSTER.get(), updated);
+        ServerPacketHandler.sendRosterSync(player);
         ctx.getSource().sendSuccess(() -> Component.literal("Active pet: " + next.map(KindredCommand::shortId).orElse("(none)")), false);
         return 1;
     }

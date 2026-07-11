@@ -1,9 +1,11 @@
 package net.silvertide.kindred.events;
 
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.entity.living.LivingDamageEvent;
@@ -17,6 +19,7 @@ import net.silvertide.kindred.bond.HoldManager;
 import net.silvertide.kindred.config.Config;
 import net.silvertide.kindred.Kindred;
 import net.silvertide.kindred.attachment.Bond;
+import net.silvertide.kindred.attachment.Bonded;
 import net.silvertide.kindred.attachment.BondRoster;
 import net.silvertide.kindred.registry.ModAttachments;
 import net.silvertide.kindred.network.ServerPacketHandler;
@@ -57,6 +60,15 @@ public final class PlayerEvents {
                 if (bond.isPresent()) {
                     OfflineSnapshot s = snap.get();
                     updated = updated.with(bond.get().withSnapshot(s.nbt(), s.dim(), s.pos()));
+                }
+            }
+
+            // Drain the offline death timestamp so the revival cooldown applies.
+            Optional<Long> diedOffline = saved.takeDiedOffline(bondId);
+            if (diedOffline.isPresent()) {
+                Optional<Bond> bond = updated.get(bondId);
+                if (bond.isPresent()) {
+                    updated = updated.with(bond.get().withDiedAt(diedOffline));
                 }
             }
         }
@@ -101,9 +113,22 @@ public final class PlayerEvents {
         for (ServerPlayer player : event.getServer().getPlayerList().getPlayers()) {
             flushLoadedSnapshots(player);
         }
+        stashSnapshotsForOfflineOwners(event.getServer());
         BondEntityIndex.get().clear();
         HoldManager.get().clear();
         GlobalSummonCooldownTracker.get().clear();
+    }
+
+    private static void stashSnapshotsForOfflineOwners(MinecraftServer server) {
+        BondEntityIndex.get().forEachLoaded((bondId, entity) -> {
+            if (entity instanceof LivingEntity living && living.isDeadOrDying()) return;
+            if (!(entity.level() instanceof ServerLevel level)) return;
+            if (!entity.hasData(ModAttachments.BONDED.get())) return;
+            Bonded bonded = entity.getData(ModAttachments.BONDED.get());
+            if (server.getPlayerList().getPlayer(bonded.ownerUUID()) != null) return;
+            KindredSavedData.get(level).putOfflineSnapshot(bondId,
+                    new OfflineSnapshot(entity.saveWithoutId(new CompoundTag()), level.dimension(), entity.position()));
+        });
     }
 
     private static void flushLoadedSnapshots(ServerPlayer player) {

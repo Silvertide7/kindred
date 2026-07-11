@@ -187,9 +187,10 @@ public final class ServerPacketHandler {
                     }
                     Optional<Entity> live = BondEntityIndex.get().find(b.bondId());
                     boolean loaded = live.isPresent();
-                    CompoundTag nbt = loaded
+                    CompoundTag nbt = (loaded
                             ? live.get().saveWithoutId(new CompoundTag())
-                            : b.nbtSnapshot();
+                            : b.nbtSnapshot().copy());
+                    nbt.remove("Items");
                     return BondView.from(b, roster.isActive(b.bondId()), loaded, remaining, revivalRemaining, nbt);
                 })
                 .toList();

@@ -1,5 +1,6 @@
 package net.silvertide.kindred.attachment;
 
+import com.mojang.datafixers.util.Either;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.core.UUIDUtil;
@@ -15,10 +16,27 @@ import java.util.UUID;
 public record BondRoster(Map<UUID, Bond> bonds, Optional<UUID> activePetId) {
     public static final BondRoster EMPTY = new BondRoster(Map.of(), Optional.empty());
 
+    /** Bonds serialize as an ordered list — NBT compounds are hash-ordered, so the
+     *  old map encoding scrambled the player's custom roster order on every world
+     *  reload. The legacy map shape is still accepted on read so existing rosters
+     *  survive the format change; they re-save in list form. */
+    private static final Codec<List<Bond>> ORDERED_BONDS_CODEC = Codec.either(
+            Bond.CODEC.listOf(),
+            Codec.unboundedMap(UUIDUtil.STRING_CODEC, Bond.CODEC)
+    ).xmap(
+            either -> either.map(list -> list, legacyMap -> List.copyOf(legacyMap.values())),
+            Either::left);
+
     public static final Codec<BondRoster> CODEC = RecordCodecBuilder.create(instance -> instance.group(
-            Codec.unboundedMap(UUIDUtil.STRING_CODEC, Bond.CODEC).fieldOf("bonds").forGetter(BondRoster::bonds),
+            ORDERED_BONDS_CODEC.fieldOf("bonds").forGetter(roster -> List.copyOf(roster.bonds().values())),
             UUIDUtil.STRING_CODEC.optionalFieldOf("active").forGetter(BondRoster::activePetId)
-    ).apply(instance, BondRoster::new));
+    ).apply(instance, BondRoster::fromOrderedBonds));
+
+    private static BondRoster fromOrderedBonds(List<Bond> orderedBonds, Optional<UUID> activePetId) {
+        Map<UUID, Bond> bonds = new LinkedHashMap<>();
+        orderedBonds.forEach(bond -> bonds.put(bond.bondId(), bond));
+        return new BondRoster(bonds, activePetId);
+    }
 
     public Optional<Bond> get(UUID bondId) {
         return Optional.ofNullable(bonds.get(bondId));

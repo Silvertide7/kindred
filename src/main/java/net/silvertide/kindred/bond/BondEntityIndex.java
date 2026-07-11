@@ -3,6 +3,7 @@ package net.silvertide.kindred.bond;
 import net.minecraft.world.entity.Entity;
 
 import java.util.Map;
+import java.util.function.BiConsumer;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -35,6 +36,12 @@ public final class BondEntityIndex {
         Entity entity = entitiesByBondId.get(bondId);
         if (entity == null || entity.isRemoved()) return Optional.empty();
         return Optional.of(entity);
+    }
+
+    public void forEachLoaded(BiConsumer<UUID, Entity> action) {
+        entitiesByBondId.forEach((bondId, entity) -> {
+            if (!entity.isRemoved()) action.accept(bondId, entity);
+        });
     }
 
     public void clear() {

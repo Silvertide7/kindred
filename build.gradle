@@ -4,6 +4,7 @@ plugins {
     id 'maven-publish'
     id 'net.minecraftforge.gradle' version '[6.0,6.2)'
     id 'org.parchmentmc.librarian.forgegradle' version '1.+'
+    id 'me.modmuss50.mod-publish-plugin' version '0.8.3'
 }
 
 version = mod_version
@@ -101,6 +102,49 @@ tasks.named('jar', Jar).configure {
     }
 
     finalizedBy 'reobfJar'
+}
+
+publishMods {
+    file = jar.archiveFile
+    modLoaders.add("forge")
+    changelog = new File("$project.rootDir/CHANGELOG.md").getText('UTF-8')
+    version = "${minecraft_version}-${mod_version}"
+    type = STABLE
+    displayName = "kindred-${minecraft_version}-${mod_version}"
+    dryRun = System.getenv("PUBLISH_DRY_RUN") == "true"
+
+    curseforge {
+        projectId = "${curseforge_project}"
+        projectSlug = "kindred"
+        accessToken = providers.environmentVariable("CF_TOKEN")
+
+        minecraftVersions.add(minecraft_version)
+        javaVersions.add(JavaVersion.VERSION_17)
+
+        clientRequired = true
+        serverRequired = true
+    }
+
+    modrinth {
+        projectId = "6M5GinSS"
+        accessToken = providers.environmentVariable("MODRINTH_TOKEN")
+        minecraftVersions.add(minecraft_version)
+    }
+
+    discord {
+        webhookUrl = providers.environmentVariable("DISCORD_WEBHOOK_URL")
+        dryRunWebhookUrl = providers.environmentVariable("DISCORD_WEBHOOK_TEST_URL")
+        username = "Kindred"
+        style {
+            look = "MODERN"
+            color = "curseforge"
+            link = "EMBED"
+        }
+    }
+}
+
+tasks.matching { it.name.startsWith('publish') && it.group == 'publishing' }.configureEach {
+    dependsOn 'reobfJar'
 }
 
 tasks.withType(JavaCompile).configureEach {

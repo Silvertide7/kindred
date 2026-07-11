@@ -1,9 +1,9 @@
 package net.silvertide.kindred.client.events;
 
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.fml.common.EventBusSubscriber;
-import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.client.event.ClientPlayerNetworkEvent;
 import net.silvertide.kindred.Kindred;
 import net.silvertide.kindred.client.data.ClientRosterData;
 import net.silvertide.kindred.client.data.HoldActionState;
@@ -19,7 +19,7 @@ import net.silvertide.kindred.client.data.PreviewEntityCache;
  * same shape (clear singletons whose static fields outlive the connection),
  * different lifecycle hook (logout vs server-stop).</p>
  */
-@EventBusSubscriber(modid = Kindred.MODID, value = Dist.CLIENT)
+@Mod.EventBusSubscriber(modid = Kindred.MODID, value = Dist.CLIENT)
 public final class ClientNetworkEvents {
 
     /**

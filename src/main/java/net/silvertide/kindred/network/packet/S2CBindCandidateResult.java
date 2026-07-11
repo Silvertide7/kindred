@@ -1,12 +1,6 @@
 package net.silvertide.kindred.network.packet;
 
-import io.netty.buffer.ByteBuf;
-import net.minecraft.core.UUIDUtil;
-import net.minecraft.network.codec.ByteBufCodecs;
-import net.minecraft.network.codec.StreamCodec;
-import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.resources.ResourceLocation;
-import net.silvertide.kindred.Kindred;
+import net.minecraft.network.FriendlyByteBuf;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -15,19 +9,17 @@ public record S2CBindCandidateResult(
         UUID entityUUID,
         boolean canBind,
         Optional<String> denyMessageKey
-) implements CustomPacketPayload {
-    public static final Type<S2CBindCandidateResult> TYPE = new Type<>(
-            ResourceLocation.fromNamespaceAndPath(Kindred.MODID, "s2c_bind_candidate_result"));
+) {
+    public void encode(FriendlyByteBuf buf) {
+        buf.writeUUID(entityUUID);
+        buf.writeBoolean(canBind);
+        buf.writeOptional(denyMessageKey, FriendlyByteBuf::writeUtf);
+    }
 
-    public static final StreamCodec<ByteBuf, S2CBindCandidateResult> STREAM_CODEC = StreamCodec.composite(
-            UUIDUtil.STREAM_CODEC, S2CBindCandidateResult::entityUUID,
-            ByteBufCodecs.BOOL, S2CBindCandidateResult::canBind,
-            ByteBufCodecs.optional(ByteBufCodecs.STRING_UTF8), S2CBindCandidateResult::denyMessageKey,
-            S2CBindCandidateResult::new
-    );
-
-    @Override
-    public Type<? extends CustomPacketPayload> type() {
-        return TYPE;
+    public static S2CBindCandidateResult decode(FriendlyByteBuf buf) {
+        return new S2CBindCandidateResult(
+                buf.readUUID(),
+                buf.readBoolean(),
+                buf.readOptional(FriendlyByteBuf::readUtf));
     }
 }

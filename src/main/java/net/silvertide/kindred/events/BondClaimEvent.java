@@ -2,11 +2,11 @@ package net.silvertide.kindred.events;
 
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
-import net.neoforged.bus.api.Event;
-import net.neoforged.bus.api.ICancellableEvent;
+import net.minecraftforge.eventbus.api.Cancelable;
+import net.minecraftforge.eventbus.api.Event;
 
 /**
- * Fired on the NeoForge game event bus when a bond claim is about to commit.
+ * Fired on the Forge game event bus when a bond claim is about to commit.
  * Listeners can {@link #setCanceled(boolean) cancel} to reject the claim — the
  * player sees a "binding cancelled" message and no bond writes happen.
  *
@@ -20,7 +20,8 @@ import net.neoforged.bus.api.ICancellableEvent;
  * the intended use; side-effects (logging, decrementing counters) are fine but
  * should be idempotent in case a downstream listener cancels after yours runs.</p>
  */
-public class BondClaimEvent extends Event implements ICancellableEvent {
+@Cancelable
+public class BondClaimEvent extends Event {
     private final ServerPlayer player;
     private final Entity target;
 

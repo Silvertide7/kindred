@@ -6,7 +6,7 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.LivingEntity;
-import net.neoforged.neoforge.network.PacketDistributor;
+import net.silvertide.kindred.network.Networking;
 import net.silvertide.kindred.bond.HoldManager;
 import net.silvertide.kindred.client.data.ClientRosterData;
 import net.silvertide.kindred.client.data.HoldActionState;
@@ -155,7 +155,7 @@ public final class RosterScreen extends Screen {
         bindFooter.configureLayout(claimBtnX, claimBtnY, claimBtnW, costLineY);
         bindFooter.onOpen(Minecraft.getInstance().player);
 
-        PacketDistributor.sendToServer(new C2SOpenRoster());
+        Networking.sendToServer(new C2SOpenRoster());
     }
 
     public void onBindCandidateResult(java.util.UUID entityUUID, boolean canBind, java.util.Optional<String> denyKey) {
@@ -273,41 +273,43 @@ public final class RosterScreen extends Screen {
             return;
         }
 
-        // Compute the button rect for the action being held. Layout mirrors
-        // mouseClicked and renderRow so the drag-off check matches the actual
-        // button geometry exactly.
-        int rowLeftX = leftPos + ROW_PAD;
-        int buttonHeight = ROW_HEIGHT - 10;
-        int buttonY = rowY + 4;
-        boolean dismissEnabled = Config.ALLOW_DISMISSING.get();
-        int summonButtonWidth = 50;
-        int dismissButtonWidth = 50;
-        int breakSmallButtonWidth = 16;
-        int rowRightEdge = rowLeftX + ROW_W - 4;
-        int breakSmallButtonX = rowRightEdge - breakSmallButtonWidth;
-        int dismissButtonX = breakSmallButtonX - dismissButtonWidth - 4;
-        int summonButtonX = (dismissEnabled ? dismissButtonX : breakSmallButtonX) - summonButtonWidth - 4;
-        int confirmButtonX = dismissEnabled ? dismissButtonX : summonButtonX;
-
+        RowButtons buttons = rowButtons(rowY);
         int heldButtonX;
         int heldButtonWidth;
         if (rowHold.action() == RowHoldAction.SUMMON) {
-            heldButtonX = summonButtonX;
-            heldButtonWidth = summonButtonWidth;
+            heldButtonX = buttons.summonX();
+            heldButtonWidth = ROW_SUMMON_W;
         } else if (rowHold.action() == RowHoldAction.DISMISS) {
-            heldButtonX = dismissButtonX;
-            heldButtonWidth = dismissButtonWidth;
+            heldButtonX = buttons.dismissX();
+            heldButtonWidth = ROW_DISMISS_W;
         } else {
-            heldButtonX = confirmButtonX;
-            heldButtonWidth = rowRightEdge - confirmButtonX;
+            heldButtonX = buttons.confirmX();
+            heldButtonWidth = buttons.confirmW();
         }
 
-        if (!inBox(mouseX, mouseY, heldButtonX, buttonY, heldButtonWidth, buttonHeight)) {
+        if (!inBox(mouseX, mouseY, heldButtonX, buttons.btnY(), heldButtonWidth, ROW_BTN_H)) {
             // Mouse drifted off the button. Mimics the keybind's "release means
             // cancel" contract — server validates the actual button geometry
             // didn't change, but for our purposes the cancel is unconditional.
             cancelRowHoldAndNotifyServer();
         }
+    }
+
+    private record RowButtons(int btnY, int summonX, int dismissX, int breakSmallX, int confirmX, int rightEdge,
+                              boolean dismissEnabled) {
+        int confirmW() {
+            return rightEdge - confirmX;
+        }
+    }
+
+    private RowButtons rowButtons(int rowY) {
+        int rightEdge = leftPos + ROW_PAD + ROW_W - 4;
+        boolean dismissEnabled = Config.ALLOW_DISMISSING.get();
+        int breakSmallX = rightEdge - ROW_BREAK_W;
+        int dismissX = breakSmallX - ROW_BTN_GAP - ROW_DISMISS_W;
+        int summonX = (dismissEnabled ? dismissX : breakSmallX) - ROW_BTN_GAP - ROW_SUMMON_W;
+        int confirmX = dismissEnabled ? dismissX : summonX;
+        return new RowButtons(rowY + 2, summonX, dismissX, breakSmallX, confirmX, rightEdge, dismissEnabled);
     }
 
     private void renderRow(GuiGraphics g, BondView bond, int x, int y, int w, int mx, int my) {
@@ -350,13 +352,13 @@ public final class RosterScreen extends Screen {
         Component subtitle = entityTypeName(bond).copy().append(" · ").append(stateOrDim);
         g.drawString(font, subtitle, textX, y + ROW_SUBTITLE_Y_OFFSET, C_TEXT_MUTED);
 
+        RowButtons buttons = rowButtons(y);
         int btnH = ROW_BTN_H;
-        int btnY = y + 2;
-        int rightEdge = x + w - 4;
-        boolean dismissEnabled = Config.ALLOW_DISMISSING.get();
-        int breakSmallX = rightEdge - ROW_BREAK_W;
-        int dismissX = breakSmallX - ROW_BTN_GAP - ROW_DISMISS_W;
-        int summonX = (dismissEnabled ? dismissX : breakSmallX) - ROW_BTN_GAP - ROW_SUMMON_W;
+        int btnY = buttons.btnY();
+        boolean dismissEnabled = buttons.dismissEnabled();
+        int breakSmallX = buttons.breakSmallX();
+        int dismissX = buttons.dismissX();
+        int summonX = buttons.summonX();
         int summonW = ROW_SUMMON_W;
         int dismissW = ROW_DISMISS_W;
         int breakSmallW = ROW_BREAK_W;
@@ -367,8 +369,8 @@ public final class RosterScreen extends Screen {
         boolean armed = bond.bondId().equals(breakArmedBondId)
                 && (System.currentTimeMillis() < breakArmedExpiresAt || breakHoldActive);
 
-        int confirmX = dismissEnabled ? dismissX : summonX;
-        int confirmW = rightEdge - confirmX;
+        int confirmX = buttons.confirmX();
+        int confirmW = buttons.confirmW();
         boolean summonHiddenByConfirm = armed && !dismissEnabled;
 
         float summonHoldProgress = 0F;
@@ -497,15 +499,15 @@ public final class RosterScreen extends Screen {
             int x = leftPos + ROW_PAD;
             int rowH = ROW_HEIGHT - 2;
             int btnH = ROW_BTN_H;
-            int btnY = rowY + 2;
+            RowButtons buttons = rowButtons(rowY);
+            int btnY = buttons.btnY();
             int summonW = ROW_SUMMON_W;
             int dismissW = ROW_DISMISS_W;
             int breakSmallW = ROW_BREAK_W;
-            int rightEdge = x + ROW_W - 4;
-            boolean dismissEnabled = Config.ALLOW_DISMISSING.get();
-            int breakSmallX = rightEdge - breakSmallW;
-            int dismissX = breakSmallX - ROW_BTN_GAP - dismissW;
-            int summonX = (dismissEnabled ? dismissX : breakSmallX) - ROW_BTN_GAP - summonW;
+            boolean dismissEnabled = buttons.dismissEnabled();
+            int breakSmallX = buttons.breakSmallX();
+            int dismissX = buttons.dismissX();
+            int summonX = buttons.summonX();
 
             BondView bond = bonds.get(i);
             int mx = (int) mouseX;
@@ -521,24 +523,24 @@ public final class RosterScreen extends Screen {
 
             if (!summonHiddenByConfirm && inBox(mx, my, summonX, btnY, summonW, btnH)) {
                 rowHold = new RowHold(bond.bondId(), RowHoldAction.SUMMON);
-                PacketDistributor.sendToServer(new C2SRequestHold(
+                Networking.sendToServer(new C2SRequestHold(
                         HoldManager.Action.SUMMON_BOND, java.util.Optional.of(bond.bondId())));
                 return true;
             }
 
             if (armed) {
-                int confirmX = dismissEnabled ? dismissX : summonX;
-                int confirmW = rightEdge - confirmX;
+                int confirmX = buttons.confirmX();
+                int confirmW = buttons.confirmW();
                 if (inBox(mx, my, confirmX, btnY, confirmW, btnH)) {
                     rowHold = new RowHold(bond.bondId(), RowHoldAction.BREAK);
-                    PacketDistributor.sendToServer(new C2SRequestHold(
+                    Networking.sendToServer(new C2SRequestHold(
                             HoldManager.Action.BREAK, java.util.Optional.of(bond.bondId())));
                     return true;
                 }
             } else {
                 if (dismissEnabled && inBox(mx, my, dismissX, btnY, dismissW, btnH)) {
                     rowHold = new RowHold(bond.bondId(), RowHoldAction.DISMISS);
-                    PacketDistributor.sendToServer(new C2SRequestHold(
+                    Networking.sendToServer(new C2SRequestHold(
                             HoldManager.Action.DISMISS, java.util.Optional.of(bond.bondId())));
                     return true;
                 }
@@ -606,12 +608,12 @@ public final class RosterScreen extends Screen {
         if (rowHold == null) return;
         rowHold = null;
         if (Minecraft.getInstance().getConnection() != null) {
-            PacketDistributor.sendToServer(new C2SCancelHold());
+            Networking.sendToServer(new C2SCancelHold());
         }
     }
 
     @Override
-    public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+    public boolean mouseScrolled(double mouseX, double mouseY, double scrollY) {
         int n = ClientRosterData.bonds().size();
         int visibleRows = (rowsBottom - rowsTop) / ROW_HEIGHT;
         int maxOffset = Math.max(0, n - visibleRows);

@@ -1,7 +1,7 @@
 package net.silvertide.kindred.compat.pmmo;
 
 import net.minecraft.world.entity.player.Player;
-import net.neoforged.fml.ModList;
+import net.minecraftforge.fml.ModList;
 import net.silvertide.kindred.Kindred;
 
 public final class PmmoCompat {

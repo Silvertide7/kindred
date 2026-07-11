@@ -16,9 +16,15 @@ public record BondRoster(Map<UUID, Bond> bonds, Optional<UUID> activePetId) {
     public static final BondRoster EMPTY = new BondRoster(Map.of(), Optional.empty());
 
     public static final Codec<BondRoster> CODEC = RecordCodecBuilder.create(instance -> instance.group(
-            Codec.unboundedMap(UUIDUtil.STRING_CODEC, Bond.CODEC).fieldOf("bonds").forGetter(BondRoster::bonds),
+            Bond.CODEC.listOf().fieldOf("bonds").forGetter(roster -> List.copyOf(roster.bonds().values())),
             UUIDUtil.STRING_CODEC.optionalFieldOf("active").forGetter(BondRoster::activePetId)
-    ).apply(instance, BondRoster::new));
+    ).apply(instance, BondRoster::fromOrderedBonds));
+
+    private static BondRoster fromOrderedBonds(List<Bond> orderedBonds, Optional<UUID> activePetId) {
+        Map<UUID, Bond> bonds = new LinkedHashMap<>();
+        orderedBonds.forEach(bond -> bonds.put(bond.bondId(), bond));
+        return new BondRoster(bonds, activePetId);
+    }
 
     public Optional<Bond> get(UUID bondId) {
         return Optional.ofNullable(bonds.get(bondId));

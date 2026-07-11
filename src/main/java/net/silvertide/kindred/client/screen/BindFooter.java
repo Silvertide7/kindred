@@ -4,7 +4,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraftforge.registries.ForgeRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.OwnableEntity;
@@ -13,7 +13,7 @@ import net.minecraft.world.entity.projectile.ProjectileUtil;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.Vec3;
-import net.neoforged.neoforge.network.PacketDistributor;
+import net.silvertide.kindred.network.Networking;
 import net.silvertide.kindred.client.data.ClientRosterData;
 import net.silvertide.kindred.compat.pmmo.PmmoMode;
 import net.silvertide.kindred.config.Config;
@@ -60,7 +60,7 @@ public final class BindFooter {
         raycastCandidate = hit;
         serverBindEligibility = Boolean.FALSE;
         serverDenyKey = Optional.empty();
-        PacketDistributor.sendToServer(new C2SCheckBindCandidate(hit.getUUID()));
+        Networking.sendToServer(new C2SCheckBindCandidate(hit.getUUID()));
     }
 
     public void onClose() {
@@ -98,7 +98,7 @@ public final class BindFooter {
             return;
         }
         if (System.currentTimeMillis() - holdStartMs >= BIND_HOLD_MS) {
-            PacketDistributor.sendToServer(new C2SClaimEntity(candidate.getUUID()));
+            Networking.sendToServer(new C2SClaimEntity(candidate.getUUID()));
             raycastCandidate = null;
             serverBindEligibility = null;
             serverDenyKey = Optional.empty();
@@ -114,7 +114,7 @@ public final class BindFooter {
 
             int currentButtonY = buttonY();
             boolean hover = inBox(mouseX, mouseY, buttonX, currentButtonY, buttonW, BUTTON_HEIGHT);
-            String entityTypePath = BuiltInRegistries.ENTITY_TYPE.getKey(candidate.getType()).getPath();
+            String entityTypePath = ForgeRegistries.ENTITY_TYPES.getKey(candidate.getType()).getPath();
             Component label = Component.translatable("kindred.screen.bind", entityTypePath);
             drawButton(graphics, font, buttonX, currentButtonY, buttonW, BUTTON_HEIGHT, label,
                     hover ? C_BTN_CLAIM_HOVER : C_BTN_CLAIM,

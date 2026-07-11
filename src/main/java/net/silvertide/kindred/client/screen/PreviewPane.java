@@ -5,7 +5,7 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.LivingEntity;
-import net.neoforged.neoforge.network.PacketDistributor;
+import net.silvertide.kindred.network.Networking;
 import net.silvertide.kindred.client.data.ClientRosterData;
 import net.silvertide.kindred.client.data.PreviewEntityCache;
 import net.silvertide.kindred.config.Config;
@@ -32,7 +32,6 @@ public final class PreviewPane {
     private static final int MIN_ENTITY_SCALE = 20;
     private static final int MAX_ENTITY_SCALE = 60;
     private static final int MOUSE_Y_PITCH_CLAMP_BAND = 8;
-    private static final float ENTITY_RENDER_FORWARD_OFFSET = 0.0625F;
 
     private static final int C_TEXT = 0xFFFFFFFF;
     private static final int C_TEXT_MUTED = 0xFF8FA0B0;
@@ -110,7 +109,7 @@ public final class PreviewPane {
         if (inBox(mouseX, mouseY, buttonsX, moveY, moveHalfW, ACTION_BTN_H)) {
             if (selectedBondIndex(selected) > 0) {
                 renameEditor.commitEditing();
-                PacketDistributor.sendToServer(new C2SReorderBond(selected.bondId(), -1));
+                Networking.sendToServer(new C2SReorderBond(selected.bondId(), -1));
             }
             return true;
         }
@@ -118,7 +117,7 @@ public final class PreviewPane {
             int idx = selectedBondIndex(selected);
             if (idx >= 0 && idx < ClientRosterData.bonds().size() - 1) {
                 renameEditor.commitEditing();
-                PacketDistributor.sendToServer(new C2SReorderBond(selected.bondId(), 1));
+                Networking.sendToServer(new C2SReorderBond(selected.bondId(), 1));
             }
             return true;
         }
@@ -131,7 +130,7 @@ public final class PreviewPane {
         if (!selected.isActive()
                 && inBox(mouseX, mouseY, buttonsX, setActiveY, buttonsW, ACTION_BTN_H)) {
             renameEditor.commitEditing();
-            PacketDistributor.sendToServer(new C2SSetActivePet(Optional.of(selected.bondId())));
+            Networking.sendToServer(new C2SSetActivePet(Optional.of(selected.bondId())));
             return true;
         }
         return false;
@@ -171,14 +170,19 @@ public final class PreviewPane {
         int clampedMouseY = Math.max(verticalCenter - MOUSE_Y_PITCH_CLAMP_BAND,
                 Math.min(verticalCenter + MOUSE_Y_PITCH_CLAMP_BAND, mouseY));
 
+        int anchorX = previewX + PREVIEW_W / 2;
+        int anchorY = entityRenderBottom - 2;
+        float eyeOffsetPx = scale * previewEntity.getEyeHeight();
+
+        graphics.enableScissor(previewX, entityRenderTop, previewX + PREVIEW_W, entityRenderBottom);
         InventoryScreen.renderEntityInInventoryFollowsMouse(
                 graphics,
-                previewX, entityRenderTop,
-                previewX + PREVIEW_W, entityRenderBottom,
+                anchorX, anchorY,
                 scale,
-                ENTITY_RENDER_FORWARD_OFFSET,
-                mouseX, clampedMouseY,
+                anchorX - mouseX,
+                anchorY - eyeOffsetPx - clampedMouseY,
                 previewEntity);
+        graphics.disableScissor();
     }
 
     private void renderPaneButtons(GuiGraphics graphics, Font font, BondView selected,

@@ -6,7 +6,7 @@ import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
-import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraftforge.registries.ForgeRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
@@ -15,9 +15,9 @@ import net.minecraft.world.entity.projectile.ProjectileUtil;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.Vec3;
-import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.fml.common.EventBusSubscriber;
-import net.neoforged.neoforge.event.RegisterCommandsEvent;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.event.RegisterCommandsEvent;
 import net.silvertide.kindred.Kindred;
 import net.silvertide.kindred.attachment.Bond;
 import net.silvertide.kindred.attachment.BondRoster;
@@ -26,14 +26,15 @@ import net.silvertide.kindred.bond.bond_results.BreakResult;
 import net.silvertide.kindred.bond.bond_results.ClaimResult;
 import net.silvertide.kindred.bond.bond_results.DismissResult;
 import net.silvertide.kindred.bond.bond_results.SummonResult;
-import net.silvertide.kindred.registry.ModAttachments;
+import net.silvertide.kindred.attachment.KindredData;
+import net.silvertide.kindred.network.ServerPacketHandler;
 
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-@EventBusSubscriber(modid = Kindred.MODID)
+@Mod.EventBusSubscriber(modid = Kindred.MODID)
 public final class KindredCommand {
 
     @SubscribeEvent
@@ -72,7 +73,7 @@ public final class KindredCommand {
 
     private static int runList(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
         ServerPlayer player = ctx.getSource().getPlayerOrException();
-        BondRoster roster = player.getData(ModAttachments.BOND_ROSTER.get());
+        BondRoster roster = KindredData.getRoster(player);
         List<Bond> bonds = sortedBonds(roster);
 
         if (bonds.isEmpty()) {
@@ -139,7 +140,7 @@ public final class KindredCommand {
     private static int runActive(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
         ServerPlayer player = ctx.getSource().getPlayerOrException();
         String target = StringArgumentType.getString(ctx, "target");
-        BondRoster roster = player.getData(ModAttachments.BOND_ROSTER.get());
+        BondRoster roster = KindredData.getRoster(player);
 
         Optional<UUID> next;
         if (target.equalsIgnoreCase("none") || target.equalsIgnoreCase("clear")) {
@@ -165,13 +166,14 @@ public final class KindredCommand {
         }
 
         BondRoster updated = roster.withActive(next);
-        player.setData(ModAttachments.BOND_ROSTER.get(), updated);
+        KindredData.setRoster(player, updated);
+        ServerPacketHandler.sendRosterSync(player);
         ctx.getSource().sendSuccess(() -> Component.literal("Active pet: " + next.map(KindredCommand::shortId).orElse("(none)")), false);
         return 1;
     }
 
     private static Bond bondAt(ServerPlayer player, int index) {
-        BondRoster roster = player.getData(ModAttachments.BOND_ROSTER.get());
+        BondRoster roster = KindredData.getRoster(player);
         List<Bond> bonds = sortedBonds(roster);
         if (index < 0 || index >= bonds.size()) return null;
         return bonds.get(index);
@@ -199,7 +201,7 @@ public final class KindredCommand {
     }
 
     private static String describeEntityType(Entity entity) {
-        ResourceLocation key = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
+        ResourceLocation key = ForgeRegistries.ENTITY_TYPES.getKey(entity.getType());
         return key.toString();
     }
 

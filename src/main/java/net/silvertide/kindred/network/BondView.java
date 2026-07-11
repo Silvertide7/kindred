@@ -1,10 +1,7 @@
 package net.silvertide.kindred.network;
 
-import io.netty.buffer.ByteBuf;
-import net.minecraft.core.UUIDUtil;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.network.codec.ByteBufCodecs;
-import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.Vec3;
 import net.silvertide.kindred.attachment.Bond;
@@ -25,46 +22,36 @@ public record BondView(
         long revivalRemainingMs,
         CompoundTag nbtSnapshot
 ) {
-    public static final StreamCodec<ByteBuf, Vec3> VEC3_STREAM_CODEC = StreamCodec.composite(
-            ByteBufCodecs.DOUBLE, Vec3::x,
-            ByteBufCodecs.DOUBLE, Vec3::y,
-            ByteBufCodecs.DOUBLE, Vec3::z,
-            Vec3::new
-    );
+    public void encode(FriendlyByteBuf buf) {
+        buf.writeUUID(bondId);
+        buf.writeUUID(entityUUID);
+        buf.writeResourceLocation(entityType);
+        buf.writeOptional(displayName, FriendlyByteBuf::writeUtf);
+        buf.writeResourceLocation(lastSeenDim);
+        buf.writeDouble(lastSeenPos.x);
+        buf.writeDouble(lastSeenPos.y);
+        buf.writeDouble(lastSeenPos.z);
+        buf.writeBoolean(isActive);
+        buf.writeBoolean(loaded);
+        buf.writeVarLong(cooldownRemainingMs);
+        buf.writeVarLong(revivalRemainingMs);
+        buf.writeNbt(nbtSnapshot);
+    }
 
-    // Manual stream codec (11 fields exceeds composite's arity).
-    public static final StreamCodec<ByteBuf, BondView> STREAM_CODEC = new StreamCodec<>() {
-        @Override
-        public BondView decode(ByteBuf buf) {
-            UUID bondId = UUIDUtil.STREAM_CODEC.decode(buf);
-            UUID entityUUID = UUIDUtil.STREAM_CODEC.decode(buf);
-            ResourceLocation entityType = ResourceLocation.STREAM_CODEC.decode(buf);
-            Optional<String> displayName = ByteBufCodecs.optional(ByteBufCodecs.STRING_UTF8).decode(buf);
-            ResourceLocation lastSeenDim = ResourceLocation.STREAM_CODEC.decode(buf);
-            Vec3 lastSeenPos = VEC3_STREAM_CODEC.decode(buf);
-            boolean isActive = ByteBufCodecs.BOOL.decode(buf);
-            boolean loaded = ByteBufCodecs.BOOL.decode(buf);
-            long cooldownRemainingMs = ByteBufCodecs.VAR_LONG.decode(buf);
-            long revivalRemainingMs = ByteBufCodecs.VAR_LONG.decode(buf);
-            CompoundTag nbtSnapshot = ByteBufCodecs.TRUSTED_COMPOUND_TAG.decode(buf);
-            return new BondView(bondId, entityUUID, entityType, displayName, lastSeenDim, lastSeenPos, isActive, loaded, cooldownRemainingMs, revivalRemainingMs, nbtSnapshot);
-        }
-
-        @Override
-        public void encode(ByteBuf buf, BondView v) {
-            UUIDUtil.STREAM_CODEC.encode(buf, v.bondId());
-            UUIDUtil.STREAM_CODEC.encode(buf, v.entityUUID());
-            ResourceLocation.STREAM_CODEC.encode(buf, v.entityType());
-            ByteBufCodecs.optional(ByteBufCodecs.STRING_UTF8).encode(buf, v.displayName());
-            ResourceLocation.STREAM_CODEC.encode(buf, v.lastSeenDim());
-            VEC3_STREAM_CODEC.encode(buf, v.lastSeenPos());
-            ByteBufCodecs.BOOL.encode(buf, v.isActive());
-            ByteBufCodecs.BOOL.encode(buf, v.loaded());
-            ByteBufCodecs.VAR_LONG.encode(buf, v.cooldownRemainingMs());
-            ByteBufCodecs.VAR_LONG.encode(buf, v.revivalRemainingMs());
-            ByteBufCodecs.TRUSTED_COMPOUND_TAG.encode(buf, v.nbtSnapshot());
-        }
-    };
+    public static BondView decode(FriendlyByteBuf buf) {
+        return new BondView(
+                buf.readUUID(),
+                buf.readUUID(),
+                buf.readResourceLocation(),
+                buf.readOptional(FriendlyByteBuf::readUtf),
+                buf.readResourceLocation(),
+                new Vec3(buf.readDouble(), buf.readDouble(), buf.readDouble()),
+                buf.readBoolean(),
+                buf.readBoolean(),
+                buf.readVarLong(),
+                buf.readVarLong(),
+                buf.readAnySizeNbt());
+    }
 
     private static final UUID NO_UUID = new UUID(0L, 0L);
 

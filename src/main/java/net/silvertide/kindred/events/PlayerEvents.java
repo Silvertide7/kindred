@@ -1,24 +1,27 @@
 package net.silvertide.kindred.events;
 
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
-import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.fml.common.EventBusSubscriber;
-import net.neoforged.neoforge.event.entity.living.LivingDamageEvent;
-import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
-import net.neoforged.neoforge.event.entity.player.PlayerEvent;
-import net.neoforged.neoforge.event.server.ServerStoppingEvent;
-import net.neoforged.neoforge.event.tick.ServerTickEvent;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.event.entity.living.LivingDamageEvent;
+import net.minecraftforge.event.entity.living.LivingDeathEvent;
+import net.minecraftforge.event.entity.player.PlayerEvent;
+import net.minecraftforge.event.server.ServerStoppingEvent;
+import net.minecraftforge.event.TickEvent;
 import net.silvertide.kindred.bond.BondEntityIndex;
 import net.silvertide.kindred.bond.GlobalSummonCooldownTracker;
 import net.silvertide.kindred.bond.HoldManager;
 import net.silvertide.kindred.config.Config;
 import net.silvertide.kindred.Kindred;
 import net.silvertide.kindred.attachment.Bond;
+import net.silvertide.kindred.attachment.Bonded;
 import net.silvertide.kindred.attachment.BondRoster;
-import net.silvertide.kindred.registry.ModAttachments;
+import net.silvertide.kindred.attachment.KindredData;
 import net.silvertide.kindred.network.ServerPacketHandler;
 import net.silvertide.kindred.data.OfflineSnapshot;
 import net.silvertide.kindred.data.KindredSavedData;
@@ -27,7 +30,7 @@ import java.util.LinkedHashSet;
 import java.util.Optional;
 import java.util.UUID;
 
-@EventBusSubscriber(modid = Kindred.MODID)
+@Mod.EventBusSubscriber(modid = Kindred.MODID)
 public final class PlayerEvents {
 
     @SubscribeEvent
@@ -35,7 +38,7 @@ public final class PlayerEvents {
         if (!(event.getEntity() instanceof ServerPlayer player)) return;
         if (!(player.level() instanceof ServerLevel level)) return;
 
-        BondRoster roster = player.getData(ModAttachments.BOND_ROSTER.get());
+        BondRoster roster = KindredData.getRoster(player);
         if (roster.bonds().isEmpty()) return;
 
         KindredSavedData saved = KindredSavedData.get(level);
@@ -59,10 +62,19 @@ public final class PlayerEvents {
                     updated = updated.with(bond.get().withSnapshot(s.nbt(), s.dim(), s.pos()));
                 }
             }
+
+            // Drain the offline death timestamp so the revival cooldown applies.
+            Optional<Long> diedOffline = saved.takeDiedOffline(bondId);
+            if (diedOffline.isPresent()) {
+                Optional<Bond> bond = updated.get(bondId);
+                if (bond.isPresent()) {
+                    updated = updated.with(bond.get().withDiedAt(diedOffline));
+                }
+            }
         }
 
         if (updated != roster) {
-            player.setData(ModAttachments.BOND_ROSTER.get(), updated);
+            KindredData.setRoster(player, updated);
         }
 
         // Push initial roster snapshot so the keybind has data before the screen opens.
@@ -70,7 +82,7 @@ public final class PlayerEvents {
     }
 
     @SubscribeEvent
-    public static void onLivingDamage(LivingDamageEvent.Pre event) {
+    public static void onLivingDamage(LivingDamageEvent event) {
         if (!Config.CANCEL_HOLD_ON_DAMAGE.get()) return;
         if (!(event.getEntity() instanceof ServerPlayer player)) return;
         if (HoldManager.get().isHolding(player.getUUID())) {
@@ -92,7 +104,8 @@ public final class PlayerEvents {
     }
 
     @SubscribeEvent
-    public static void onServerTick(ServerTickEvent.Post event) {
+    public static void onServerTick(TickEvent.ServerTickEvent event) {
+        if (event.phase != TickEvent.Phase.END) return;
         HoldManager.get().tickAll(event.getServer());
     }
 
@@ -101,13 +114,26 @@ public final class PlayerEvents {
         for (ServerPlayer player : event.getServer().getPlayerList().getPlayers()) {
             flushLoadedSnapshots(player);
         }
+        stashSnapshotsForOfflineOwners(event.getServer());
         BondEntityIndex.get().clear();
         HoldManager.get().clear();
         GlobalSummonCooldownTracker.get().clear();
     }
 
+    private static void stashSnapshotsForOfflineOwners(MinecraftServer server) {
+        BondEntityIndex.get().forEachLoaded((bondId, entity) -> {
+            if (entity instanceof LivingEntity living && living.isDeadOrDying()) return;
+            if (!(entity.level() instanceof ServerLevel level)) return;
+            Optional<Bonded> bonded = KindredData.getBonded(entity);
+            if (bonded.isEmpty()) return;
+            if (server.getPlayerList().getPlayer(bonded.get().ownerUUID()) != null) return;
+            KindredSavedData.get(level).putOfflineSnapshot(bondId,
+                    new OfflineSnapshot(entity.saveWithoutId(new CompoundTag()), level.dimension(), entity.position()));
+        });
+    }
+
     private static void flushLoadedSnapshots(ServerPlayer player) {
-        BondRoster roster = player.getData(ModAttachments.BOND_ROSTER.get());
+        BondRoster roster = KindredData.getRoster(player);
         if (roster.bonds().isEmpty()) return;
 
         BondRoster updated = roster;
@@ -124,7 +150,7 @@ public final class PlayerEvents {
         }
 
         if (updated != roster) {
-            player.setData(ModAttachments.BOND_ROSTER.get(), updated);
+            KindredData.setRoster(player, updated);
         }
     }
 

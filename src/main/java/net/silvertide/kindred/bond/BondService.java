@@ -1,7 +1,7 @@
 package net.silvertide.kindred.bond;
 
 import net.minecraft.core.particles.ParticleTypes;
-import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraftforge.registries.ForgeRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceKey;
@@ -19,9 +19,10 @@ import net.minecraft.world.entity.Saddleable;
 import net.minecraft.world.entity.TamableAnimal;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.portal.DimensionTransition;
+import net.minecraft.world.level.portal.PortalInfo;
 import net.minecraft.world.phys.Vec3;
-import net.neoforged.neoforge.common.NeoForge;
+import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.common.util.ITeleporter;
 import net.silvertide.kindred.Kindred;
 import net.silvertide.kindred.bond.bond_results.BreakResult;
 import net.silvertide.kindred.bond.bond_results.ClaimResult;
@@ -35,7 +36,7 @@ import net.silvertide.kindred.compat.pmmo.PmmoCompat;
 import net.silvertide.kindred.compat.pmmo.PmmoMode;
 import net.silvertide.kindred.config.Config;
 import net.silvertide.kindred.data.KindredSavedData;
-import net.silvertide.kindred.registry.ModAttachments;
+import net.silvertide.kindred.attachment.KindredData;
 import net.silvertide.kindred.registry.ModTags;
 
 import java.util.Optional;
@@ -59,22 +60,21 @@ public final class BondService {
         if (!(target instanceof OwnableEntity owned)) return ClaimResult.NOT_OWNABLE;
         if (!player.getUUID().equals(owned.getOwnerUUID())) return ClaimResult.NOT_OWNED_BY_PLAYER;
 
-        var typeHolder = BuiltInRegistries.ENTITY_TYPE.wrapAsHolder(target.getType());
-        boolean allowlistActive = BuiltInRegistries.ENTITY_TYPE.getTag(ModTags.BOND_ALLOWLIST)
-                .map(t -> t.size() > 0).orElse(false);
+        var entityTypeTags = ForgeRegistries.ENTITY_TYPES.tags();
+        boolean allowlistActive = !entityTypeTags.getTag(ModTags.BOND_ALLOWLIST).isEmpty();
         if (allowlistActive) {
-            if (!typeHolder.is(ModTags.BOND_ALLOWLIST)) return ClaimResult.NOT_ALLOWED;
-        } else if (typeHolder.is(ModTags.BOND_DENYLIST)) {
+            if (!entityTypeTags.getTag(ModTags.BOND_ALLOWLIST).contains(target.getType())) return ClaimResult.NOT_ALLOWED;
+        } else if (entityTypeTags.getTag(ModTags.BOND_DENYLIST).contains(target.getType())) {
             return ClaimResult.NOT_ALLOWED;
         }
         if (Config.REQUIRE_SADDLEABLE.get() && !(target instanceof Saddleable)) return ClaimResult.REQUIRES_SADDLEABLE;
-        BondRoster roster = player.getData(ModAttachments.BOND_ROSTER.get());
+        BondRoster roster = KindredData.getRoster(player);
 
         // Pmmo Check
         int effectiveCap = effectiveMaxBonds(player);
         if (effectiveCap == 0) return ClaimResult.PMMO_LOCKED;
         if (roster.size() >= effectiveCap) return ClaimResult.AT_CAPACITY;
-        if (target.hasData(ModAttachments.BONDED.get())) return ClaimResult.ALREADY_BONDED;
+        if (KindredData.isBonded(target)) return ClaimResult.ALREADY_BONDED;
 
         int xpCost = Config.BOND_XP_LEVEL_COST.get();
         if (xpCost > 0 && !player.isCreative() && player.experienceLevel < xpCost) {
@@ -89,9 +89,9 @@ public final class BondService {
         if (eligibility != ClaimResult.CLAIMED) return eligibility;
 
         BondClaimEvent event = new BondClaimEvent(player, target);
-        if (NeoForge.EVENT_BUS.post(event).isCanceled()) return ClaimResult.CANCELLED;
+        if (MinecraftForge.EVENT_BUS.post(event)) return ClaimResult.CANCELLED;
 
-        BondRoster roster = player.getData(ModAttachments.BOND_ROSTER.get());
+        BondRoster roster = KindredData.getRoster(player);
         ServerLevel level = (ServerLevel) target.level();
         KindredSavedData saved = KindredSavedData.get(level);
 
@@ -99,7 +99,7 @@ public final class BondService {
         int revision = saved.incrementRevision(bondId);
 
         CompoundTag snapshot = target.saveWithoutId(new CompoundTag());
-        ResourceLocation typeId = BuiltInRegistries.ENTITY_TYPE.getKey(target.getType());
+        ResourceLocation typeId = ForgeRegistries.ENTITY_TYPES.getKey(target.getType());
         long now = System.currentTimeMillis();
 
         Optional<String> initialName = Optional.ofNullable(target.getCustomName())
@@ -124,8 +124,8 @@ public final class BondService {
         if (newRoster.activePetId().isEmpty()) {
             newRoster = newRoster.withActive(Optional.of(bondId));
         }
-        player.setData(ModAttachments.BOND_ROSTER.get(), newRoster);
-        target.setData(ModAttachments.BONDED.get(), new Bonded(bondId, player.getUUID(), revision));
+        KindredData.setRoster(player, newRoster);
+        KindredData.setBonded(target, new Bonded(bondId, player.getUUID(), revision));
         BondEntityIndex.get().track(bondId, target);
 
         int xpCost = Config.BOND_XP_LEVEL_COST.get();
@@ -138,7 +138,7 @@ public final class BondService {
     }
 
     public static BreakResult breakBond(ServerPlayer player, UUID bondId) {
-        BondRoster roster = player.getData(ModAttachments.BOND_ROSTER.get());
+        BondRoster roster = KindredData.getRoster(player);
         Optional<Bond> maybeBond = roster.get(bondId);
         if (maybeBond.isEmpty()) return BreakResult.NO_SUCH_BOND;
 
@@ -148,20 +148,24 @@ public final class BondService {
         Optional<Entity> existing = BondEntityIndex.get().find(bondId);
         Bond bond = maybeBond.get();
         if (existing.isEmpty() && (bond.dismissed() || bond.diedAt().isPresent())) {
-            materializeFresh(player, bond, level, saved);
+            SummonResult release = materializeFresh(player, bond, level, saved);
+            if (!release.isSuccess()) {
+                Kindred.LOGGER.warn("[kindred] break of bond {} aborted: could not release the pet ({})",
+                        bondId, release);
+                return BreakResult.RELEASE_FAILED;
+            }
             existing = BondEntityIndex.get().find(bondId);
         }
 
-        BondRoster current = player.getData(ModAttachments.BOND_ROSTER.get());
-        player.setData(ModAttachments.BOND_ROSTER.get(), current.without(bondId));
+        BondRoster current = KindredData.getRoster(player);
+        KindredData.setRoster(player, current.without(bondId));
 
         if (existing.isPresent()) {
             Entity entity = existing.get();
-            entity.removeData(ModAttachments.BONDED.get());
+            KindredData.removeBonded(entity);
             BondEntityIndex.get().untrack(bondId);
             saved.clearBond(bondId);
         } else {
-            saved.clearBond(bondId);
             saved.markPendingDisband(bondId);
         }
 
@@ -171,7 +175,7 @@ public final class BondService {
 
     public static DismissResult dismiss(ServerPlayer player, UUID bondId) {
         if (!Config.ALLOW_DISMISSING.get()) return DismissResult.DISABLED;
-        BondRoster roster = player.getData(ModAttachments.BOND_ROSTER.get());
+        BondRoster roster = KindredData.getRoster(player);
         Optional<Bond> bondOpt = roster.get(bondId);
         if (bondOpt.isEmpty()) return DismissResult.NO_SUCH_BOND;
 
@@ -179,8 +183,7 @@ public final class BondService {
         if (existing.isEmpty()) return DismissResult.NOT_LOADED;
         Entity entity = existing.get();
 
-        player.setData(ModAttachments.BOND_ROSTER.get(),
-                roster.with(bondOpt.get().withDismissed(true)));
+        KindredData.setRoster(player, roster.with(bondOpt.get().withDismissed(true)));
 
         entity.ejectPassengers();
         if (entity.isPassenger()) entity.stopRiding();
@@ -202,7 +205,7 @@ public final class BondService {
     }
 
     public static Optional<SummonResult> checkSummonGate(ServerPlayer player, UUID bondId) {
-        BondRoster roster = player.getData(ModAttachments.BOND_ROSTER.get());
+        BondRoster roster = KindredData.getRoster(player);
         Optional<Bond> maybeBond = roster.get(bondId);
         if (maybeBond.isEmpty()) return Optional.of(SummonResult.NO_SUCH_BOND);
         Bond bond = maybeBond.get();
@@ -233,7 +236,7 @@ public final class BondService {
         Optional<SummonResult> gateFailure = checkSummonGate(player, bondId);
         if (gateFailure.isPresent()) return gateFailure.get();
 
-        Bond bond = player.getData(ModAttachments.BOND_ROSTER.get()).get(bondId).orElseThrow();
+        Bond bond = KindredData.getRoster(player).get(bondId).orElseThrow();
 
         if (Config.REQUIRE_SPACE.get() && !BondSpawnLocator.isPlayerGrounded(player)) return SummonResult.PLAYER_AIRBORNE;
 
@@ -292,17 +295,17 @@ public final class BondService {
 
         // This probably isn't necessary, but in the case that a chunk crashes while the tp is happening this will guarantee de-duping the entity.
         int newRevision = saved.incrementRevision(bondId);
-        old.setData(ModAttachments.BONDED.get(), old.getData(ModAttachments.BONDED.get()).withRevision(newRevision));
+        KindredData.setBonded(old, KindredData.getBonded(old).orElseThrow().withRevision(newRevision));
 
         playSummonFx(level, spawnPos.x, spawnPos.y, spawnPos.z, true);
 
-        BondRoster currentRoster = player.getData(ModAttachments.BOND_ROSTER.get());
+        BondRoster currentRoster = KindredData.getRoster(player);
         Optional<Bond> currentBond = currentRoster.get(bondId);
         if (currentBond.isPresent()) {
             Bond updated = currentBond.get()
                     .withRevision(newRevision)
                     .withLastSummonedAt(System.currentTimeMillis());
-            player.setData(ModAttachments.BOND_ROSTER.get(), currentRoster.with(updated));
+            KindredData.setRoster(player, currentRoster.with(updated));
         }
 
         GlobalSummonCooldownTracker.get().recordSummon(player.getUUID());
@@ -323,17 +326,22 @@ public final class BondService {
 
         wake(old);
 
-        DimensionTransition transition = new DimensionTransition(
-                targetLevel,
-                spawnPos,
-                Vec3.ZERO,
-                player.getYRot(),
-                old.getXRot(),
-                DimensionTransition.DO_NOTHING);
+        Vec3 destination = spawnPos;
+        ITeleporter teleporter = new ITeleporter() {
+            @Override
+            public PortalInfo getPortalInfo(Entity entity, ServerLevel destWorld, java.util.function.Function<ServerLevel, PortalInfo> defaultPortalInfo) {
+                return new PortalInfo(destination, Vec3.ZERO, player.getYRot(), entity.getXRot());
+            }
+
+            @Override
+            public Entity placeEntity(Entity entity, ServerLevel currentWorld, ServerLevel destWorld, float yaw, java.util.function.Function<Boolean, Entity> repositionEntity) {
+                return repositionEntity.apply(false);
+            }
+        };
 
         Entity teleported;
         try {
-            teleported = old.changeDimension(transition);
+            teleported = old.changeDimension(targetLevel, teleporter);
         } catch (Throwable t) {
             Kindred.LOGGER.warn("[kindred] SPAWN_FAILED: changeDimension threw for {} (bond {} for {})",
                     bond.entityType(), bondId, player.getGameProfile().getName(), t);
@@ -349,11 +357,11 @@ public final class BondService {
         if (teleported instanceof LivingEntity teleportedLiving) freshenForSummon(teleportedLiving);
 
         int newRevision = saved.incrementRevision(bondId);
-        teleported.setData(ModAttachments.BONDED.get(), teleported.getData(ModAttachments.BONDED.get()).withRevision(newRevision));
+        KindredData.setBonded(teleported, KindredData.getBonded(teleported).orElseThrow().withRevision(newRevision));
 
         playSummonFx(targetLevel, spawnPos.x, spawnPos.y, spawnPos.z, true);
 
-        BondRoster currentRoster = player.getData(ModAttachments.BOND_ROSTER.get());
+        BondRoster currentRoster = KindredData.getRoster(player);
         Optional<Bond> currentBond = currentRoster.get(bondId);
         if (currentBond.isPresent()) {
             CompoundTag freshNbt = teleported.saveWithoutId(new CompoundTag());
@@ -363,7 +371,7 @@ public final class BondService {
                     .withLastSummonedAt(System.currentTimeMillis())
                     .withDiedAt(Optional.empty())
                     .withDismissed(false);
-            player.setData(ModAttachments.BOND_ROSTER.get(), currentRoster.with(updated));
+            KindredData.setRoster(player, currentRoster.with(updated));
         }
 
         GlobalSummonCooldownTracker.get().recordSummon(player.getUUID());
@@ -372,7 +380,7 @@ public final class BondService {
     }
 
     private static SummonResult materializeFresh(ServerPlayer player, Bond bond, ServerLevel targetLevel, KindredSavedData saved) {
-        EntityType<?> type = BuiltInRegistries.ENTITY_TYPE.get(bond.entityType());
+        EntityType<?> type = ForgeRegistries.ENTITY_TYPES.getValue(bond.entityType());
         if (type == null) {
             Kindred.LOGGER.warn("[kindred] SPAWN_FAILED: entity type {} not in registry (bond {} for {})",
                     bond.entityType(), bond.bondId(), player.getGameProfile().getName());
@@ -413,7 +421,7 @@ public final class BondService {
         entity.setPos(spawnPos.x, spawnPos.y, spawnPos.z);
 
         int newRevision = saved.incrementRevision(bond.bondId());
-        entity.setData(ModAttachments.BONDED.get(), new Bonded(bond.bondId(), player.getUUID(), newRevision));
+        KindredData.setBonded(entity, new Bonded(bond.bondId(), player.getUUID(), newRevision));
 
         if (!targetLevel.addFreshEntity(entity)) {
             Kindred.LOGGER.warn("[kindred] SPAWN_FAILED: addFreshEntity rejected {} at {} in {} (bond {} for {})",
@@ -424,12 +432,12 @@ public final class BondService {
 
         playSummonFx(targetLevel, spawnPos.x, spawnPos.y, spawnPos.z, true);
 
-        BondRoster currentRoster = player.getData(ModAttachments.BOND_ROSTER.get());
+        BondRoster currentRoster = KindredData.getRoster(player);
         Bond updated = bond.withRevision(newRevision)
                 .withLastSummonedAt(System.currentTimeMillis())
                 .withDiedAt(Optional.empty())  // successful materialize IS the revival
                 .withDismissed(false);         // entity is back in the world
-        player.setData(ModAttachments.BOND_ROSTER.get(), currentRoster.with(updated));
+        KindredData.setRoster(player, currentRoster.with(updated));
 
         GlobalSummonCooldownTracker.get().recordSummon(player.getUUID());
 
@@ -478,9 +486,9 @@ public final class BondService {
         // chain that got us here, and the player's roster may have been touched
         // by a sibling packet handler on the same server tick.
         // Successful summon also clears any pending revival cooldown — this IS the revival.
-        BondRoster roster = player.getData(ModAttachments.BOND_ROSTER.get());
+        BondRoster roster = KindredData.getRoster(player);
         Bond updated = bond.withLastSummonedAt(System.currentTimeMillis()).withDiedAt(Optional.empty());
-        player.setData(ModAttachments.BOND_ROSTER.get(), roster.with(updated));
+        KindredData.setRoster(player, roster.with(updated));
     }
 
     private BondService() {}

@@ -1,28 +1,21 @@
 package net.silvertide.kindred.network.packet;
 
-import io.netty.buffer.ByteBuf;
-import net.minecraft.network.codec.ByteBufCodecs;
-import net.minecraft.network.codec.StreamCodec;
-import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.resources.ResourceLocation;
-import net.silvertide.kindred.Kindred;
+import net.minecraft.network.FriendlyByteBuf;
 import net.silvertide.kindred.network.BondView;
 
 import java.util.List;
 
-public record S2CRosterSync(List<BondView> bonds, long globalCooldownRemainingMs, int effectiveMaxBonds) implements CustomPacketPayload {
-    public static final Type<S2CRosterSync> TYPE = new Type<>(
-            ResourceLocation.fromNamespaceAndPath(Kindred.MODID, "s2c_roster_sync"));
+public record S2CRosterSync(List<BondView> bonds, long globalCooldownRemainingMs, int effectiveMaxBonds) {
+    public void encode(FriendlyByteBuf buf) {
+        buf.writeCollection(bonds, (b, view) -> view.encode(b));
+        buf.writeVarLong(globalCooldownRemainingMs);
+        buf.writeVarInt(effectiveMaxBonds);
+    }
 
-    public static final StreamCodec<ByteBuf, S2CRosterSync> STREAM_CODEC = StreamCodec.composite(
-            BondView.STREAM_CODEC.apply(ByteBufCodecs.list()), S2CRosterSync::bonds,
-            ByteBufCodecs.VAR_LONG, S2CRosterSync::globalCooldownRemainingMs,
-            ByteBufCodecs.VAR_INT, S2CRosterSync::effectiveMaxBonds,
-            S2CRosterSync::new
-    );
-
-    @Override
-    public Type<? extends CustomPacketPayload> type() {
-        return TYPE;
+    public static S2CRosterSync decode(FriendlyByteBuf buf) {
+        return new S2CRosterSync(
+                buf.readList(BondView::decode),
+                buf.readVarLong(),
+                buf.readVarInt());
     }
 }

@@ -85,7 +85,7 @@ public final class HoldActionState {
         if (minecraft.level == null) return 0F;
         long totalTicks = endTick - startTick;
         if (totalTicks <= 0L) return 1F;
-        float partialTick = minecraft.getTimer().getGameTimeDeltaPartialTick(false);
+        float partialTick = minecraft.isPaused() ? 0F : minecraft.getFrameTime();
         float elapsedTicks = (minecraft.level.getGameTime() - startTick) + partialTick;
         if (elapsedTicks <= 0F) return 0F;
         return Math.min(1F, elapsedTicks / totalTicks);

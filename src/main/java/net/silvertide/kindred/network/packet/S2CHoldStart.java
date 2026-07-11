@@ -1,32 +1,24 @@
 package net.silvertide.kindred.network.packet;
 
-import io.netty.buffer.ByteBuf;
-import net.minecraft.core.UUIDUtil;
-import net.minecraft.network.codec.ByteBufCodecs;
-import net.minecraft.network.codec.StreamCodec;
-import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.resources.ResourceLocation;
-import net.silvertide.kindred.Kindred;
+import net.minecraft.network.FriendlyByteBuf;
 import net.silvertide.kindred.bond.HoldManager;
 
 import java.util.Optional;
 import java.util.UUID;
 
-public record S2CHoldStart(HoldManager.Action action, Optional<UUID> bondId, long startTick, long endTick)
-        implements CustomPacketPayload {
-    public static final Type<S2CHoldStart> TYPE = new Type<>(
-            ResourceLocation.fromNamespaceAndPath(Kindred.MODID, "s2c_hold_start"));
+public record S2CHoldStart(HoldManager.Action action, Optional<UUID> bondId, long startTick, long endTick) {
+    public void encode(FriendlyByteBuf buf) {
+        buf.writeEnum(action);
+        buf.writeOptional(bondId, FriendlyByteBuf::writeUUID);
+        buf.writeVarLong(startTick);
+        buf.writeVarLong(endTick);
+    }
 
-    public static final StreamCodec<ByteBuf, S2CHoldStart> STREAM_CODEC = StreamCodec.composite(
-            C2SRequestHold.ACTION_CODEC, S2CHoldStart::action,
-            ByteBufCodecs.optional(UUIDUtil.STREAM_CODEC), S2CHoldStart::bondId,
-            ByteBufCodecs.VAR_LONG, S2CHoldStart::startTick,
-            ByteBufCodecs.VAR_LONG, S2CHoldStart::endTick,
-            S2CHoldStart::new
-    );
-
-    @Override
-    public Type<? extends CustomPacketPayload> type() {
-        return TYPE;
+    public static S2CHoldStart decode(FriendlyByteBuf buf) {
+        return new S2CHoldStart(
+                buf.readEnum(HoldManager.Action.class),
+                buf.readOptional(FriendlyByteBuf::readUUID),
+                buf.readVarLong(),
+                buf.readVarLong());
     }
 }

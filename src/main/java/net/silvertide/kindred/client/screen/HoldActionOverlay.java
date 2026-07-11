@@ -1,9 +1,9 @@
 package net.silvertide.kindred.client.screen;
 
-import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
+import net.minecraftforge.client.gui.overlay.ForgeGui;
 import net.silvertide.kindred.bond.HoldManager;
 import net.silvertide.kindred.client.data.HoldActionState;
 import net.silvertide.kindred.config.ClientConfig;
@@ -18,7 +18,7 @@ import net.silvertide.kindred.config.ClientConfig;
  * frame including during screens — the screen just draws on top of it — so we
  * have to opt out explicitly rather than rely on layering.)</p>
  *
- * <p>Registered as a gui layer via {@code RegisterGuiLayersEvent} in
+ * <p>Registered as a gui overlay via {@code RegisterGuiOverlaysEvent} in
  * {@code ClientGuiLayers}. No-op when {@link HoldActionState} is inactive.</p>
  */
 public final class HoldActionOverlay {
@@ -36,7 +36,7 @@ public final class HoldActionOverlay {
     private static final int C_BAR_FILL_SUMMON = 0xFF4FA374;
     private static final int C_LABEL_TEXT = 0xFFFFFFFF;
 
-    public static void render(GuiGraphics graphics, DeltaTracker deltaTracker) {
+    public static void render(ForgeGui gui, GuiGraphics graphics, float partialTick, int screenWidth, int screenHeight) {
         if (!HoldActionState.isActive()) return;
 
         Minecraft minecraft = Minecraft.getInstance();
@@ -46,9 +46,6 @@ public final class HoldActionOverlay {
         // screen is open — keybind holds can't start while a screen is open
         // anyway (input capture handles that side).
         if (minecraft.screen != null) return;
-
-        int screenWidth = minecraft.getWindow().getGuiScaledWidth();
-        int screenHeight = minecraft.getWindow().getGuiScaledHeight();
 
         // Tucked above the hotbar / XP bar / health icons rather than mid-screen.
         // sh - 70 keeps the bar (and its label 12px above) clear of the survival

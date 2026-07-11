@@ -6,7 +6,7 @@ import net.silvertide.kindred.attachment.Bond;
 import net.silvertide.kindred.attachment.BondRoster;
 import net.silvertide.kindred.bond.bond_results.SummonResult;
 import net.silvertide.kindred.config.Config;
-import net.silvertide.kindred.registry.ModAttachments;
+import net.silvertide.kindred.attachment.KindredData;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -40,7 +40,7 @@ public final class HoldEligibility {
     }
 
     private static Result checkSummonByKeybind(ServerPlayer player) {
-        BondRoster roster = player.getData(ModAttachments.BOND_ROSTER.get());
+        BondRoster roster = KindredData.getRoster(player);
         if (roster.bonds().isEmpty()) return new Result.Denied("kindred.summon.no_bonds");
         Optional<UUID> activePetId = roster.activePetId();
         if (activePetId.isEmpty()) return new Result.Denied("kindred.summon.no_active");
@@ -57,7 +57,7 @@ public final class HoldEligibility {
 
     private static Result checkDismiss(ServerPlayer player, UUID bondId) {
         if (!Config.ALLOW_DISMISSING.get()) return new Result.Denied("kindred.dismiss.disabled");
-        BondRoster roster = player.getData(ModAttachments.BOND_ROSTER.get());
+        BondRoster roster = KindredData.getRoster(player);
         Optional<Bond> maybeBond = roster.get(bondId);
         if (maybeBond.isEmpty()) return new Result.Denied("kindred.dismiss.no_such_bond");
         if (BondService.isRevivalPending(maybeBond.get())) {
@@ -71,7 +71,7 @@ public final class HoldEligibility {
     }
 
     private static Result checkBreak(ServerPlayer player, UUID bondId) {
-        BondRoster roster = player.getData(ModAttachments.BOND_ROSTER.get());
+        BondRoster roster = KindredData.getRoster(player);
         Optional<Bond> maybeBond = roster.get(bondId);
         if (maybeBond.isEmpty()) return new Result.Denied("kindred.break.no_such_bond");
         if (BondService.isRevivalPending(maybeBond.get())) {

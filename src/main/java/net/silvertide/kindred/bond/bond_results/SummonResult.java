@@ -15,7 +15,7 @@ public enum SummonResult {
     CROSS_DIM_BLOCKED("kindred.summon.cross_dim_blocked"),
     BANNED_DIMENSION("kindred.summon.banned_dimension"),
     BANNED_BIOME("kindred.summon.banned_biome"),
-    SPAWN_FAILED(null);
+    SPAWN_FAILED("kindred.summon.spawn_failed");
 
     private final String translationKey;
 

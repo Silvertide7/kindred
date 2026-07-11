@@ -1,6 +1,6 @@
 package net.silvertide.kindred.client.screen;
 
-import net.neoforged.neoforge.network.PacketDistributor;
+import net.silvertide.kindred.network.Networking;
 import net.silvertide.kindred.network.BondView;
 import net.silvertide.kindred.network.packet.C2SRenameBond;
 
@@ -46,7 +46,7 @@ public final class RenameEditor {
         if (editingBondId == null) return;
         String trimmedName = editBuffer.trim();
         Optional<String> newName = trimmedName.isEmpty() ? Optional.empty() : Optional.of(trimmedName);
-        PacketDistributor.sendToServer(new C2SRenameBond(editingBondId, newName));
+        Networking.sendToServer(new C2SRenameBond(editingBondId, newName));
         editingBondId = null;
         editBuffer = "";
     }

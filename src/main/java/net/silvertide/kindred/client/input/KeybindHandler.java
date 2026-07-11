@@ -4,11 +4,11 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.entity.Entity;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.fml.common.EventBusSubscriber;
-import net.neoforged.neoforge.client.event.ClientTickEvent;
-import net.neoforged.neoforge.network.PacketDistributor;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.event.TickEvent;
+import net.silvertide.kindred.network.Networking;
 import net.silvertide.kindred.Kindred;
 import net.silvertide.kindred.bond.HoldEligibility;
 import net.silvertide.kindred.bond.HoldManager;
@@ -39,7 +39,7 @@ import java.util.UUID;
  * is the single source of truth, with no second flag tracking "did we already
  * own a hold?" — so there's no opportunity for two flags to fall out of sync.</p>
  */
-@EventBusSubscriber(modid = Kindred.MODID, value = Dist.CLIENT)
+@Mod.EventBusSubscriber(modid = Kindred.MODID, value = Dist.CLIENT)
 public final class KeybindHandler {
 
     /** Previous-tick value of {@code SUMMON_ACTIVE_PET.isDown()}. Comparing this
@@ -48,7 +48,8 @@ public final class KeybindHandler {
     private static boolean wasKeyDownLastTick = false;
 
     @SubscribeEvent
-    public static void onClientTick(ClientTickEvent.Post event) {
+    public static void onClientTick(TickEvent.ClientTickEvent event) {
+        if (event.phase != TickEvent.Phase.END) return;
         // Open roster: tap. Distinct from the summon keybind because we want
         // exactly-one-action-per-press semantics here, which consumeClick gives us.
         while (Keybinds.OPEN_ROSTER.consumeClick()) {
@@ -73,7 +74,7 @@ public final class KeybindHandler {
             // — covers the race where press and release happen close enough
             // together that the start packet is still in flight.
             wasKeyDownLastTick = false;
-            PacketDistributor.sendToServer(new C2SCancelHold());
+            Networking.sendToServer(new C2SCancelHold());
         }
     }
 
@@ -87,10 +88,10 @@ public final class KeybindHandler {
     private static void sendRequestForCurrentIntent() {
         BondView nearbyActivePet = Config.ALLOW_DISMISSING.get() ? findNearbyActivePet() : null;
         if (nearbyActivePet != null) {
-            PacketDistributor.sendToServer(new C2SRequestHold(
+            Networking.sendToServer(new C2SRequestHold(
                     HoldManager.Action.DISMISS, Optional.of(nearbyActivePet.bondId())));
         } else {
-            PacketDistributor.sendToServer(new C2SRequestHold(
+            Networking.sendToServer(new C2SRequestHold(
                     HoldManager.Action.SUMMON_KEYBIND, Optional.empty()));
         }
     }

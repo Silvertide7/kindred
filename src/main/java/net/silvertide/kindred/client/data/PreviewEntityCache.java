@@ -1,7 +1,7 @@
 package net.silvertide.kindred.client.data;
 
 import net.minecraft.client.Minecraft;
-import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraftforge.registries.ForgeRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.world.entity.Entity;
@@ -42,7 +42,7 @@ public final class PreviewEntityCache {
     private static LivingEntity build(BondView view) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) return null;
-        EntityType<?> type = BuiltInRegistries.ENTITY_TYPE.get(view.entityType());
+        EntityType<?> type = ForgeRegistries.ENTITY_TYPES.getValue(view.entityType());
         if (type == null) return null;
         Entity raw;
         try {

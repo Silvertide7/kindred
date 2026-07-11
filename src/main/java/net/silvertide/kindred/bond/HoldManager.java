@@ -4,12 +4,13 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.neoforged.neoforge.network.PacketDistributor;
+import net.silvertide.kindred.network.Networking;
+import net.silvertide.kindred.bond.bond_results.BreakResult;
 import net.silvertide.kindred.bond.bond_results.SummonResult;
 import net.silvertide.kindred.network.ServerPacketHandler;
 import net.silvertide.kindred.network.packet.S2CHoldStart;
 import net.silvertide.kindred.network.packet.S2CHoldStop;
-import net.silvertide.kindred.registry.ModAttachments;
+import net.silvertide.kindred.attachment.KindredData;
 
 import java.util.Iterator;
 import java.util.Map;
@@ -48,12 +49,12 @@ public final class HoldManager {
         activeHoldsByPlayer.put(player.getUUID(), new ActiveHold(action, bondId, startTick, endTick));
 
         Optional<UUID> bondIdForPacket = bondId == null ? Optional.empty() : Optional.of(bondId);
-        PacketDistributor.sendToPlayer(player, new S2CHoldStart(action, bondIdForPacket, startTick, endTick));
+        Networking.sendToPlayer(player, new S2CHoldStart(action, bondIdForPacket, startTick, endTick));
     }
 
     public void cancel(ServerPlayer player) {
         if (activeHoldsByPlayer.remove(player.getUUID()) == null) return;
-        PacketDistributor.sendToPlayer(player, new S2CHoldStop());
+        Networking.sendToPlayer(player, new S2CHoldStop());
     }
 
     public void tickAll(MinecraftServer server) {
@@ -71,7 +72,7 @@ public final class HoldManager {
 
             iterator.remove();
             executeAction(player, hold);
-            PacketDistributor.sendToPlayer(player, new S2CHoldStop());
+            Networking.sendToPlayer(player, new S2CHoldStop());
         }
     }
 
@@ -82,7 +83,7 @@ public final class HoldManager {
     private void executeAction(ServerPlayer player, ActiveHold hold) {
         switch (hold.action()) {
             case SUMMON_KEYBIND -> {
-                Optional<UUID> activePetId = player.getData(ModAttachments.BOND_ROSTER.get()).activePetId();
+                Optional<UUID> activePetId = KindredData.getRoster(player).activePetId();
                 if (activePetId.isEmpty()) {
                     player.sendSystemMessage(Component.translatable("kindred.summon.no_active"));
                     return;
@@ -95,7 +96,9 @@ public final class HoldManager {
                 ServerPacketHandler.sendRosterSync(player);
             }
             case BREAK -> {
-                BondService.breakBond(player, hold.bondId());
+                if (BondService.breakBond(player, hold.bondId()) == BreakResult.RELEASE_FAILED) {
+                    player.displayClientMessage(Component.translatable("kindred.break.release_failed"), true);
+                }
                 ServerPacketHandler.sendRosterSync(player);
             }
         }

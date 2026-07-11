@@ -5,8 +5,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
-import net.neoforged.neoforge.network.PacketDistributor;
-import net.neoforged.neoforge.network.handling.IPayloadContext;
+import net.minecraftforge.network.NetworkEvent;
 import net.silvertide.kindred.attachment.Bond;
 import net.silvertide.kindred.attachment.BondRoster;
 import net.silvertide.kindred.bond.HoldManager;
@@ -23,56 +22,53 @@ import net.silvertide.kindred.network.packet.C2SRequestHold;
 import net.silvertide.kindred.network.packet.C2SSetActivePet;
 import net.silvertide.kindred.network.packet.S2CBindCandidateResult;
 import net.silvertide.kindred.network.packet.S2CRosterSync;
-import net.silvertide.kindred.registry.ModAttachments;
+import net.silvertide.kindred.attachment.KindredData;
 import net.silvertide.kindred.bond.BondService;
 import net.silvertide.kindred.bond.GlobalSummonCooldownTracker;
 
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 public final class ServerPacketHandler {
 
     // Server-side guard against spoofed claim packets
     private static final double MAX_CLAIM_DISTANCE_SQ = 12.0D * 12.0D;
 
-    public static void onOpenRoster(C2SOpenRoster payload, IPayloadContext context) {
-        context.enqueueWork(() -> {
-            if (!(context.player() instanceof ServerPlayer player)) return;
-            sendRosterSync(player);
-        });
+    public static void onOpenRoster(C2SOpenRoster payload, Supplier<NetworkEvent.Context> context) {
+        ServerPlayer player = context.get().getSender();
+        if (player == null) return;
+        sendRosterSync(player);
     }
 
-    public static void onRequestHold(C2SRequestHold payload, IPayloadContext context) {
-        context.enqueueWork(() -> {
-            if (!(context.player() instanceof ServerPlayer player)) return;
-            HoldManager.get().requestStart(player, payload.action(), payload.bondId().orElse(null));
-        });
+    public static void onRequestHold(C2SRequestHold payload, Supplier<NetworkEvent.Context> context) {
+        ServerPlayer player = context.get().getSender();
+        if (player == null) return;
+        HoldManager.get().requestStart(player, payload.action(), payload.bondId().orElse(null));
     }
 
-    public static void onCancelHold(C2SCancelHold payload, IPayloadContext context) {
-        context.enqueueWork(() -> {
-            if (!(context.player() instanceof ServerPlayer player)) return;
-            HoldManager.get().cancel(player);
-        });
+    public static void onCancelHold(C2SCancelHold payload, Supplier<NetworkEvent.Context> context) {
+        ServerPlayer player = context.get().getSender();
+        if (player == null) return;
+        HoldManager.get().cancel(player);
     }
 
-    public static void onCheckBindCandidate(C2SCheckBindCandidate payload, IPayloadContext context) {
-        context.enqueueWork(() -> {
-            if (!(context.player() instanceof ServerPlayer player)) return;
-            ServerLevel level = (ServerLevel) player.level();
-            Entity target = level.getEntity(payload.entityUUID());
-            if (target == null || target.distanceToSqr(player) > MAX_CLAIM_DISTANCE_SQ) {
-                PacketDistributor.sendToPlayer(player, new S2CBindCandidateResult(
-                        payload.entityUUID(), false, Optional.empty()));
-                return;
-            }
-            ClaimResult result = BondService.checkClaimEligibility(player, target);
-            boolean canBind = result == ClaimResult.CLAIMED;
-            Optional<String> denyKey = canBind ? Optional.empty() : Optional.of(denyKeyFor(result));
-            PacketDistributor.sendToPlayer(player, new S2CBindCandidateResult(
-                    payload.entityUUID(), canBind, denyKey));
-        });
+    public static void onCheckBindCandidate(C2SCheckBindCandidate payload, Supplier<NetworkEvent.Context> context) {
+        ServerPlayer player = context.get().getSender();
+        if (player == null) return;
+        ServerLevel level = (ServerLevel) player.level();
+        Entity target = level.getEntity(payload.entityUUID());
+        if (target == null || target.distanceToSqr(player) > MAX_CLAIM_DISTANCE_SQ) {
+            Networking.sendToPlayer(player, new S2CBindCandidateResult(
+                    payload.entityUUID(), false, Optional.empty()));
+            return;
+        }
+        ClaimResult result = BondService.checkClaimEligibility(player, target);
+        boolean canBind = result == ClaimResult.CLAIMED;
+        Optional<String> denyKey = canBind ? Optional.empty() : Optional.of(denyKeyFor(result));
+        Networking.sendToPlayer(player, new S2CBindCandidateResult(
+                payload.entityUUID(), canBind, denyKey));
     }
 
     private static String denyKeyFor(ClaimResult result) {
@@ -90,21 +86,20 @@ public final class ServerPacketHandler {
         };
     }
 
-    public static void onClaimEntity(C2SClaimEntity payload, IPayloadContext context) {
-        context.enqueueWork(() -> {
-            if (!(context.player() instanceof ServerPlayer player)) return;
-            ServerLevel level = (ServerLevel) player.level();
-            Entity target = level.getEntity(payload.entityUUID());
-            if (target == null || target.distanceToSqr(player) > MAX_CLAIM_DISTANCE_SQ) {
-                return;
-            }
-            ClaimResult result = BondService.tryClaim(player, target);
-            if (result == ClaimResult.CLAIMED) {
-                sendRosterSync(player);
-            } else {
-                player.sendSystemMessage(claimDenyMessage(result));
-            }
-        });
+    public static void onClaimEntity(C2SClaimEntity payload, Supplier<NetworkEvent.Context> context) {
+        ServerPlayer player = context.get().getSender();
+        if (player == null) return;
+        ServerLevel level = (ServerLevel) player.level();
+        Entity target = level.getEntity(payload.entityUUID());
+        if (target == null || target.distanceToSqr(player) > MAX_CLAIM_DISTANCE_SQ) {
+            return;
+        }
+        ClaimResult result = BondService.tryClaim(player, target);
+        if (result == ClaimResult.CLAIMED) {
+            sendRosterSync(player);
+        } else {
+            player.sendSystemMessage(claimDenyMessage(result));
+        }
     }
 
     private static Component claimDenyMessage(ClaimResult result) {
@@ -122,22 +117,21 @@ public final class ServerPacketHandler {
 
     private static final int MAX_NAME_LEN = 32;
 
-    public static void onRenameBond(C2SRenameBond payload, IPayloadContext context) {
-        context.enqueueWork(() -> {
-            if (!(context.player() instanceof ServerPlayer player)) return;
-            if (!Config.ALLOW_RENAME.get()) return;
-            BondRoster roster = player.getData(ModAttachments.BOND_ROSTER.get());
-            Optional<Bond> bond = roster.get(payload.bondId());
-            if (bond.isEmpty()) return;
-            Optional<String> sanitized = payload.newName()
-                    .map(ServerPacketHandler::sanitizeName)
-                    .filter(s -> !s.isEmpty());
-            Bond updated = bond.get().withDisplayName(sanitized);
-            player.setData(ModAttachments.BOND_ROSTER.get(), roster.with(updated));
-            BondEntityIndex.get().find(payload.bondId())
-                    .ifPresent(e -> BondService.applyDisplayName(e, sanitized));
-            sendRosterSync(player);
-        });
+    public static void onRenameBond(C2SRenameBond payload, Supplier<NetworkEvent.Context> context) {
+        ServerPlayer player = context.get().getSender();
+        if (player == null) return;
+        if (!Config.ALLOW_RENAME.get()) return;
+        BondRoster roster = KindredData.getRoster(player);
+        Optional<Bond> bond = roster.get(payload.bondId());
+        if (bond.isEmpty()) return;
+        Optional<String> sanitized = payload.newName()
+                .map(ServerPacketHandler::sanitizeName)
+                .filter(s -> !s.isEmpty());
+        Bond updated = bond.get().withDisplayName(sanitized);
+        KindredData.setRoster(player, roster.with(updated));
+        BondEntityIndex.get().find(payload.bondId())
+                .ifPresent(e -> BondService.applyDisplayName(e, sanitized));
+        sendRosterSync(player);
     }
 
     private static String sanitizeName(String raw) {
@@ -149,32 +143,30 @@ public final class ServerPacketHandler {
         return s;
     }
 
-    public static void onReorderBond(C2SReorderBond payload, IPayloadContext context) {
-        context.enqueueWork(() -> {
-            if (!(context.player() instanceof ServerPlayer player)) return;
-            BondRoster roster = player.getData(ModAttachments.BOND_ROSTER.get());
-            BondRoster updated = roster.withMoved(payload.bondId(), payload.delta());
-            if (updated != roster) {
-                player.setData(ModAttachments.BOND_ROSTER.get(), updated);
-                sendRosterSync(player);
-            }
-        });
+    public static void onReorderBond(C2SReorderBond payload, Supplier<NetworkEvent.Context> context) {
+        ServerPlayer player = context.get().getSender();
+        if (player == null) return;
+        BondRoster roster = KindredData.getRoster(player);
+        BondRoster updated = roster.withMoved(payload.bondId(), payload.delta());
+        if (updated != roster) {
+            KindredData.setRoster(player, updated);
+            sendRosterSync(player);
+        }
     }
 
-    public static void onSetActivePet(C2SSetActivePet payload, IPayloadContext context) {
-        context.enqueueWork(() -> {
-            if (!(context.player() instanceof ServerPlayer player)) return;
-            BondRoster roster = player.getData(ModAttachments.BOND_ROSTER.get());
-            BondRoster updated = roster.withActive(payload.bondId());
-            if (updated != roster) {
-                player.setData(ModAttachments.BOND_ROSTER.get(), updated);
-            }
-            sendRosterSync(player);
-        });
+    public static void onSetActivePet(C2SSetActivePet payload, Supplier<NetworkEvent.Context> context) {
+        ServerPlayer player = context.get().getSender();
+        if (player == null) return;
+        BondRoster roster = KindredData.getRoster(player);
+        BondRoster updated = roster.withActive(payload.bondId());
+        if (updated != roster) {
+            KindredData.setRoster(player, updated);
+        }
+        sendRosterSync(player);
     }
 
     public static void sendRosterSync(ServerPlayer player) {
-        BondRoster roster = player.getData(ModAttachments.BOND_ROSTER.get());
+        BondRoster roster = KindredData.getRoster(player);
         long now = System.currentTimeMillis();
         long cooldownMs = Config.summonCooldownMs();
         long revivalCooldownMs = Config.revivalCooldownMs();
@@ -187,16 +179,17 @@ public final class ServerPacketHandler {
                     }
                     Optional<Entity> live = BondEntityIndex.get().find(b.bondId());
                     boolean loaded = live.isPresent();
-                    CompoundTag nbt = loaded
+                    CompoundTag nbt = (loaded
                             ? live.get().saveWithoutId(new CompoundTag())
-                            : b.nbtSnapshot();
+                            : b.nbtSnapshot().copy());
+                    nbt.remove("Items");
                     return BondView.from(b, roster.isActive(b.bondId()), loaded, remaining, revivalRemaining, nbt);
                 })
                 .toList();
         long globalRemaining = GlobalSummonCooldownTracker.get()
                 .remainingMs(player.getUUID(), Config.summonGlobalCooldownMs());
         int effectiveCap = BondService.effectiveMaxBonds(player);
-        PacketDistributor.sendToPlayer(player, new S2CRosterSync(views, globalRemaining, effectiveCap));
+        Networking.sendToPlayer(player, new S2CRosterSync(views, globalRemaining, effectiveCap));
     }
 
     private ServerPacketHandler() {}

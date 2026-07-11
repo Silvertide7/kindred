@@ -2,7 +2,7 @@ package net.silvertide.kindred.client.screen;
 
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraftforge.registries.ForgeRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.silvertide.kindred.network.BondView;
@@ -97,7 +97,7 @@ public final class ScreenDrawUtil {
     }
 
     public static Component entityTypeName(BondView bond) {
-        var type = BuiltInRegistries.ENTITY_TYPE.get(bond.entityType());
+        var type = ForgeRegistries.ENTITY_TYPES.getValue(bond.entityType());
         return type != null ? type.getDescription() : Component.literal(bond.entityType().getPath());
     }
 

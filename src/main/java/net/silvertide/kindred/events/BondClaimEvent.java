@@ -5,21 +5,6 @@ import net.minecraft.world.entity.Entity;
 import net.minecraftforge.eventbus.api.Cancelable;
 import net.minecraftforge.eventbus.api.Event;
 
-/**
- * Fired on the Forge game event bus when a bond claim is about to commit.
- * Listeners can {@link #setCanceled(boolean) cancel} to reject the claim — the
- * player sees a "binding cancelled" message and no bond writes happen.
- *
- * <p>Fires on the server only, after {@code BondService.checkClaimEligibility}
- * has returned {@code CLAIMED}, so listeners can assume the basic gates
- * (ownership, allow/deny, capacity, XP, PMMO) already passed. Use this hook for
- * custom gates: quest progress, party rules, datapack predicates, KubeJS
- * scripts, etc.</p>
- *
- * <p>Fires once per claim attempt. Read-only "should I allow this?" logic is
- * the intended use; side-effects (logging, decrementing counters) are fine but
- * should be idempotent in case a downstream listener cancels after yours runs.</p>
- */
 @Cancelable
 public class BondClaimEvent extends Event {
     private final ServerPlayer player;

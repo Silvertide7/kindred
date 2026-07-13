@@ -6,6 +6,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.ai.attributes.AttributeInstance;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.event.entity.living.LivingDamageEvent;
@@ -22,6 +23,7 @@ import net.silvertide.kindred.attachment.Bond;
 import net.silvertide.kindred.attachment.Bonded;
 import net.silvertide.kindred.attachment.BondRoster;
 import net.silvertide.kindred.attachment.KindredData;
+import net.silvertide.kindred.registry.ModAttributes;
 import net.silvertide.kindred.network.ServerPacketHandler;
 import net.silvertide.kindred.data.OfflineSnapshot;
 import net.silvertide.kindred.data.KindredSavedData;
@@ -37,6 +39,8 @@ public final class PlayerEvents {
     public static void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
         if (!(event.getEntity() instanceof ServerPlayer player)) return;
         if (!(player.level() instanceof ServerLevel level)) return;
+
+        syncMaxCompanionBonds(player);
 
         BondRoster roster = KindredData.getRoster(player);
         if (roster.bonds().isEmpty()) return;
@@ -79,6 +83,12 @@ public final class PlayerEvents {
 
         // Push initial roster snapshot so the keybind has data before the screen opens.
         ServerPacketHandler.sendRosterSync(player);
+    }
+
+    @SubscribeEvent
+    public static void onPlayerRespawn(PlayerEvent.PlayerRespawnEvent event) {
+        if (!(event.getEntity() instanceof ServerPlayer player)) return;
+        syncMaxCompanionBonds(player);
     }
 
     @SubscribeEvent
@@ -130,6 +140,15 @@ public final class PlayerEvents {
             KindredSavedData.get(level).putOfflineSnapshot(bondId,
                     new OfflineSnapshot(entity.saveWithoutId(new CompoundTag()), level.dimension(), entity.position()));
         });
+    }
+
+    private static void syncMaxCompanionBonds(ServerPlayer player) {
+        AttributeInstance attribute = player.getAttribute(ModAttributes.MAX_COMPANION_BONDS.get());
+        if (attribute == null) return;
+        double configured = Config.STARTING_COMPANION_BONDS.get();
+        if (attribute.getBaseValue() != configured) {
+            attribute.setBaseValue(configured);
+        }
     }
 
     private static void flushLoadedSnapshots(ServerPlayer player) {

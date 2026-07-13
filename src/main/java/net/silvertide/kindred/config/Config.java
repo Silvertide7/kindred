@@ -1,7 +1,6 @@
 package net.silvertide.kindred.config;
 
 import net.minecraftforge.common.ForgeConfigSpec;
-import net.silvertide.kindred.compat.pmmo.PmmoMode;
 
 public final class Config {
     private static final ForgeConfigSpec.Builder BUILDER = new ForgeConfigSpec.Builder();
@@ -9,9 +8,15 @@ public final class Config {
 
     static { BUILDER.push("bonding"); }
 
-    public static final ForgeConfigSpec.IntValue MAX_BONDS = BUILDER
-            .comment("Maximum number of bonds per player.")
-            .defineInRange("maxBonds", 10, 1, 64);
+    public static final ForgeConfigSpec.IntValue STARTING_COMPANION_BONDS = BUILDER
+            .comment("",
+                     "Base value for the max_companion_bonds attribute. Synced onto each " +
+                     "player's attribute base value on login whenever it doesn't already match, " +
+                     "so changing this also updates existing players on their next login. The " +
+                     "attribute itself (not this config) is what bond-capacity checks read — use " +
+                     "attribute modifiers (not base-value edits, which this sync overwrites) for " +
+                     "per-player or mod-driven adjustments.")
+            .defineInRange("startingCompanionBonds", 10, 1, 64);
 
     public static final ForgeConfigSpec.BooleanValue REQUIRE_SADDLEABLE = BUILDER
             .comment("",
@@ -128,38 +133,6 @@ public final class Config {
             .comment("",
                      "If true, taking damage cancels any in-progress summon/dismiss hold (mirrors vanilla bow-draw / eating interrupt).")
             .define("cancelHoldOnDamage", true);
-
-    static { BUILDER.pop(); }
-
-    static { BUILDER.push("pmmo"); }
-
-    public static final ForgeConfigSpec.BooleanValue PMMO_ENABLED = BUILDER
-            .comment("Master toggle for PMMO integration. No-op if PMMO isn't loaded.")
-            .define("pmmoEnabled", false);
-
-    public static final ForgeConfigSpec.ConfigValue<String> PMMO_SKILL = BUILDER
-            .comment("",
-                     "PMMO skill ID gating bond claims. Used both as the API key " +
-                     "(\"charisma\" → APIUtils.getLevel(\"charisma\", player)) and " +
-                     "as the lang-key suffix (pmmo.charisma → display name resolved " +
-                     "via PMMO's en_us.json).")
-            .define("pmmoSkill", "charisma");
-
-    public static final ForgeConfigSpec.EnumValue<PmmoMode> PMMO_MODE = BUILDER
-            .comment("",
-                     "ALL_OR_NOTHING: at pmmoStartLevel, all bonds up to maxBonds unlock at once.",
-                     "LINEAR: 1 bond at pmmoStartLevel; +1 every pmmoIncrementPerBond levels above, capped at maxBonds.")
-            .defineEnum("pmmoMode", PmmoMode.ALL_OR_NOTHING);
-
-    public static final ForgeConfigSpec.IntValue PMMO_START_LEVEL = BUILDER
-            .comment("",
-                     "Skill level required for the first bond.")
-            .defineInRange("pmmoStartLevel", 3, 0, 1000);
-
-    public static final ForgeConfigSpec.IntValue PMMO_INCREMENT_PER_BOND = BUILDER
-            .comment("",
-                     "Levels per additional bond in LINEAR mode. Ignored in ALL_OR_NOTHING.")
-            .defineInRange("pmmoIncrementPerBond", 2, 1, 1000);
 
     static { BUILDER.pop(); }
 

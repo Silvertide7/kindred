@@ -78,9 +78,9 @@ public final class ServerPacketHandler {
             case NOT_ALLOWED -> "kindred.bind.deny.not_allowed";
             case REQUIRES_SADDLEABLE -> "kindred.bind.deny.requires_saddleable";
             case AT_CAPACITY -> "kindred.bind.deny.at_capacity";
+            case BONDING_LOCKED -> "kindred.bind.deny.locked";
             case ALREADY_BONDED -> "kindred.bind.deny.already_bonded";
             case NOT_ENOUGH_XP -> "kindred.bind.deny.not_enough_xp";
-            case PMMO_LOCKED -> "kindred.bind.deny.pmmo_locked";
             case CANCELLED -> "kindred.bind.deny.cancelled";
             default -> "kindred.bind.deny.generic";
         };
@@ -107,10 +107,6 @@ public final class ServerPacketHandler {
         return switch (result) {
             case NOT_ENOUGH_XP ->
                     Component.translatable(key, Config.BOND_XP_LEVEL_COST.get());
-            case PMMO_LOCKED -> Component.translatable(
-                    key,
-                    Component.translatable("pmmo." + Config.PMMO_SKILL.get()),
-                    Config.PMMO_START_LEVEL.get());
             default -> Component.translatable(key);
         };
     }

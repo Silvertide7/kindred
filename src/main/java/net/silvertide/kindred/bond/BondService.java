@@ -32,11 +32,10 @@ import net.silvertide.kindred.events.BondClaimEvent;
 import net.silvertide.kindred.attachment.Bond;
 import net.silvertide.kindred.attachment.BondRoster;
 import net.silvertide.kindred.attachment.Bonded;
-import net.silvertide.kindred.compat.pmmo.PmmoCompat;
-import net.silvertide.kindred.compat.pmmo.PmmoMode;
 import net.silvertide.kindred.config.Config;
 import net.silvertide.kindred.data.KindredSavedData;
 import net.silvertide.kindred.attachment.KindredData;
+import net.silvertide.kindred.registry.ModAttributes;
 import net.silvertide.kindred.registry.ModTags;
 
 import java.util.Optional;
@@ -44,16 +43,10 @@ import java.util.UUID;
 
 public final class BondService {
 
+    private static final double ATTRIBUTE_DRIFT_EPSILON = 1.0E-6;
+
     public static int effectiveMaxBonds(Player player) {
-        int hardCap = Config.MAX_BONDS.get();
-        if (!Config.PMMO_ENABLED.get() || !PmmoCompat.isAvailable()) return hardCap;
-        long level = PmmoCompat.getSkillLevel(player, Config.PMMO_SKILL.get());
-        int startLevel = Config.PMMO_START_LEVEL.get();
-        if (level < startLevel) return 0;
-        if (Config.PMMO_MODE.get() == PmmoMode.ALL_OR_NOTHING) return hardCap;
-        int increment = Math.max(1, Config.PMMO_INCREMENT_PER_BOND.get());
-        long allowed = ((level - startLevel) / increment) + 1;
-        return (int) Math.min(hardCap, allowed);
+        return (int) Math.floor(player.getAttributeValue(ModAttributes.MAX_COMPANION_BONDS.get()) + ATTRIBUTE_DRIFT_EPSILON);
     }
 
     public static ClaimResult checkClaimEligibility(ServerPlayer player, Entity target) {
@@ -70,9 +63,8 @@ public final class BondService {
         if (Config.REQUIRE_SADDLEABLE.get() && !(target instanceof Saddleable)) return ClaimResult.REQUIRES_SADDLEABLE;
         BondRoster roster = KindredData.getRoster(player);
 
-        // Pmmo Check
         int effectiveCap = effectiveMaxBonds(player);
-        if (effectiveCap == 0) return ClaimResult.PMMO_LOCKED;
+        if (effectiveCap <= 0) return ClaimResult.BONDING_LOCKED;
         if (roster.size() >= effectiveCap) return ClaimResult.AT_CAPACITY;
         if (KindredData.isBonded(target)) return ClaimResult.ALREADY_BONDED;
 

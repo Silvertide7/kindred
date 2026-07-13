@@ -58,19 +58,8 @@ minecraft {
 
 sourceSets.main.resources { srcDir 'src/generated/resources' }
 
-repositories {
-    maven {
-        url 'https://www.cursemaven.com'
-        content {
-            includeGroup 'curse.maven'
-        }
-    }
-}
-
 dependencies {
     minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
-
-    compileOnly fg.deobf("curse.maven:pmmo-353935:${pmmo_version}")
 }
 
 tasks.named('processResources', ProcessResources).configure {

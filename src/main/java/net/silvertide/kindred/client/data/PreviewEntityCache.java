@@ -15,17 +15,6 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
-/**
- * Lazy client-side cache of preview {@link LivingEntity} instances built from each
- * bond's snapshot NBT. The instances exist only for {@code InventoryScreen}'s render
- * API — they are never added to a level, never tick, and have no chunk presence.
- *
- * <p>Cache is cleared on screen close. Construction is on-demand: the first render
- * of a given bond builds and caches the entity; subsequent renders hit the cache.
- * The first render of a never-seen-this-session entity type pays a one-time
- * texture/model load (~50–100 ms) — that's a Minecraft-renderer cache miss, not
- * something we can avoid by caching entity instances.</p>
- */
 public final class PreviewEntityCache {
     private static final int ABSTRACT_HORSE_FLAG_SADDLE = 4;
 
@@ -62,13 +51,6 @@ public final class PreviewEntityCache {
         return living;
     }
 
-    /**
-     * Strip transient damage/death state from the snapshot so the preview always
-     * renders alive and unhurt — no red hurt-flash, no death-collapse pose, no
-     * fire overlay — regardless of how the pet was when it was last snapshotted.
-     * Also hides the floating nametag so it doesn't overlap the preview render;
-     * the roster row's name still uses {@code bond.displayName()}.
-     */
     private static void freshenForPreview(LivingEntity living, CompoundTag nbt) {
         living.setHealth(living.getMaxHealth());
         living.hurtTime = 0;

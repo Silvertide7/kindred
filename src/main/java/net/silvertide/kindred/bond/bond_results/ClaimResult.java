@@ -7,8 +7,8 @@ public enum ClaimResult {
     NOT_ALLOWED,
     REQUIRES_SADDLEABLE,
     AT_CAPACITY,
+    BONDING_LOCKED,
     ALREADY_BONDED,
     NOT_ENOUGH_XP,
-    PMMO_LOCKED,
     CANCELLED
 }

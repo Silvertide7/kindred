@@ -1,4 +1,5 @@
 {
+  "attribute.kindred.max_companion_bonds": "Max Companion Bonds",
   "key.categories.kindred": "Kindred",
   "key.kindred.summon_active_pet": "Summon Active Pet",
   "key.kindred.open_roster": "Open Companions",
@@ -16,10 +17,9 @@
   "kindred.bind.deny.not_allowed": "This species isn't allowed to be bonded",
   "kindred.bind.deny.requires_saddleable": "Only mounts can be bonded on this server",
   "kindred.bind.deny.at_capacity": "Max bonds reached",
+  "kindred.bind.deny.locked": "Bonding is currently locked",
   "kindred.bind.deny.already_bonded": "That pet is already bonded",
   "kindred.bind.deny.not_enough_xp": "Requires %s XP levels to bond",
-  "kindred.bind.deny.pmmo_locked": "Bonding requires %1$s level %2$s",
-  "kindred.bind.deny.pmmo_next_unlock": "Next bond unlocks at %1$s level %2$s",
   "kindred.bind.deny.cancelled": "Bonding cancelled",
   "kindred.bind.deny.generic": "This pet can't be bonded right now",
   "kindred.bind.cost": "Cost: %s levels",

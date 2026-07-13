@@ -6,6 +6,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.ai.attributes.AttributeInstance;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.entity.living.LivingDamageEvent;
@@ -22,6 +23,7 @@ import net.silvertide.kindred.attachment.Bond;
 import net.silvertide.kindred.attachment.Bonded;
 import net.silvertide.kindred.attachment.BondRoster;
 import net.silvertide.kindred.registry.ModAttachments;
+import net.silvertide.kindred.registry.ModAttributes;
 import net.silvertide.kindred.network.ServerPacketHandler;
 import net.silvertide.kindred.data.OfflineSnapshot;
 import net.silvertide.kindred.data.KindredSavedData;
@@ -38,6 +40,8 @@ public final class PlayerEvents {
         if (!(event.getEntity() instanceof ServerPlayer player)) return;
         if (!(player.level() instanceof ServerLevel level)) return;
 
+        syncMaxCompanionBonds(player);
+
         BondRoster roster = player.getData(ModAttachments.BOND_ROSTER.get());
         if (roster.bonds().isEmpty()) return;
 
@@ -45,7 +49,6 @@ public final class PlayerEvents {
         BondRoster updated = roster;
 
         for (UUID bondId : new LinkedHashSet<>(roster.bonds().keySet())) {
-            // Drain killed-while-offline first — the bond is gone before any snapshot matters.
             if (saved.wasKilledOffline(bondId)) {
                 updated = updated.without(bondId);
                 saved.clearBond(bondId);
@@ -53,7 +56,6 @@ public final class PlayerEvents {
                 continue;
             }
 
-            // Drain offline NBT snapshot.
             Optional<OfflineSnapshot> snap = saved.takeOfflineSnapshot(bondId);
             if (snap.isPresent()) {
                 Optional<Bond> bond = updated.get(bondId);
@@ -63,7 +65,6 @@ public final class PlayerEvents {
                 }
             }
 
-            // Drain the offline death timestamp so the revival cooldown applies.
             Optional<Long> diedOffline = saved.takeDiedOffline(bondId);
             if (diedOffline.isPresent()) {
                 Optional<Bond> bond = updated.get(bondId);
@@ -77,7 +78,6 @@ public final class PlayerEvents {
             player.setData(ModAttachments.BOND_ROSTER.get(), updated);
         }
 
-        // Push initial roster snapshot so the keybind has data before the screen opens.
         ServerPacketHandler.sendRosterSync(player);
     }
 
@@ -129,6 +129,15 @@ public final class PlayerEvents {
             KindredSavedData.get(level).putOfflineSnapshot(bondId,
                     new OfflineSnapshot(entity.saveWithoutId(new CompoundTag()), level.dimension(), entity.position()));
         });
+    }
+
+    private static void syncMaxCompanionBonds(ServerPlayer player) {
+        AttributeInstance attribute = player.getAttribute(ModAttributes.MAX_COMPANION_BONDS);
+        if (attribute == null) return;
+        double configured = Config.STARTING_COMPANION_BONDS.get();
+        if (attribute.getBaseValue() != configured) {
+            attribute.setBaseValue(configured);
+        }
     }
 
     private static void flushLoadedSnapshots(ServerPlayer player) {

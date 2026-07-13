@@ -31,11 +31,10 @@ import net.silvertide.kindred.events.BondClaimEvent;
 import net.silvertide.kindred.attachment.Bond;
 import net.silvertide.kindred.attachment.BondRoster;
 import net.silvertide.kindred.attachment.Bonded;
-import net.silvertide.kindred.compat.pmmo.PmmoCompat;
-import net.silvertide.kindred.compat.pmmo.PmmoMode;
 import net.silvertide.kindred.config.Config;
 import net.silvertide.kindred.data.KindredSavedData;
 import net.silvertide.kindred.registry.ModAttachments;
+import net.silvertide.kindred.registry.ModAttributes;
 import net.silvertide.kindred.registry.ModTags;
 
 import java.util.Optional;
@@ -43,16 +42,10 @@ import java.util.UUID;
 
 public final class BondService {
 
+    private static final double ATTRIBUTE_DRIFT_EPSILON = 1.0E-6;
+
     public static int effectiveMaxBonds(Player player) {
-        int hardCap = Config.MAX_BONDS.get();
-        if (!Config.PMMO_ENABLED.get() || !PmmoCompat.isAvailable()) return hardCap;
-        long level = PmmoCompat.getSkillLevel(player, Config.PMMO_SKILL.get());
-        int startLevel = Config.PMMO_START_LEVEL.get();
-        if (level < startLevel) return 0;
-        if (Config.PMMO_MODE.get() == PmmoMode.ALL_OR_NOTHING) return hardCap;
-        int increment = Math.max(1, Config.PMMO_INCREMENT_PER_BOND.get());
-        long allowed = ((level - startLevel) / increment) + 1;
-        return (int) Math.min(hardCap, allowed);
+        return (int) Math.floor(player.getAttributeValue(ModAttributes.MAX_COMPANION_BONDS) + ATTRIBUTE_DRIFT_EPSILON);
     }
 
     public static ClaimResult checkClaimEligibility(ServerPlayer player, Entity target) {
@@ -70,9 +63,8 @@ public final class BondService {
         if (Config.REQUIRE_SADDLEABLE.get() && !(target instanceof Saddleable)) return ClaimResult.REQUIRES_SADDLEABLE;
         BondRoster roster = player.getData(ModAttachments.BOND_ROSTER.get());
 
-        // Pmmo Check
         int effectiveCap = effectiveMaxBonds(player);
-        if (effectiveCap == 0) return ClaimResult.PMMO_LOCKED;
+        if (effectiveCap <= 0) return ClaimResult.BONDING_LOCKED;
         if (roster.size() >= effectiveCap) return ClaimResult.AT_CAPACITY;
         if (target.hasData(ModAttachments.BONDED.get())) return ClaimResult.ALREADY_BONDED;
 
@@ -278,7 +270,6 @@ public final class BondService {
             return teleportLoaded(player, old, bond, playerLevel, saved, SummonResult.SUMMONED_FRESH);
         }
 
-        // Not loaded anywhere — materialize from stored snapshot
         return materializeFresh(player, bond, playerLevel, saved);
     }
 
@@ -294,7 +285,6 @@ public final class BondService {
         old.setYRot(player.getYRot());
         old.teleportTo(spawnPos.x, spawnPos.y, spawnPos.z);
 
-        // This probably isn't necessary, but in the case that a chunk crashes while the tp is happening this will guarantee de-duping the entity.
         int newRevision = saved.incrementRevision(bondId);
         old.setData(ModAttachments.BONDED.get(), old.getData(ModAttachments.BONDED.get()).withRevision(newRevision));
 
@@ -383,7 +373,6 @@ public final class BondService {
             return SummonResult.SPAWN_FAILED;
         }
 
-        // Find a valid spawn pocket within 5x5 of the player; snap to ground.
         Vec3 spawnPos;
         if (Config.REQUIRE_SPACE.get()) {
             Optional<Vec3> found = BondSpawnLocator.findSpawnLocation(targetLevel, player, type.getDimensions());
@@ -431,8 +420,8 @@ public final class BondService {
         BondRoster currentRoster = player.getData(ModAttachments.BOND_ROSTER.get());
         Bond updated = bond.withRevision(newRevision)
                 .withLastSummonedAt(System.currentTimeMillis())
-                .withDiedAt(Optional.empty())  // successful materialize IS the revival
-                .withDismissed(false);         // entity is back in the world
+                .withDiedAt(Optional.empty())
+                .withDismissed(false);
         player.setData(ModAttachments.BOND_ROSTER.get(), currentRoster.with(updated));
 
         GlobalSummonCooldownTracker.get().recordSummon(player.getUUID());
@@ -478,10 +467,6 @@ public final class BondService {
     }
 
     private static void writeSummonTimestamp(ServerPlayer player, Bond bond) {
-        // Re-read the roster fresh — we don't hold a reference across the call
-        // chain that got us here, and the player's roster may have been touched
-        // by a sibling packet handler on the same server tick.
-        // Successful summon also clears any pending revival cooldown — this IS the revival.
         BondRoster roster = player.getData(ModAttachments.BOND_ROSTER.get());
         Bond updated = bond.withLastSummonedAt(System.currentTimeMillis()).withDiedAt(Optional.empty());
         player.setData(ModAttachments.BOND_ROSTER.get(), roster.with(updated));

@@ -8,6 +8,7 @@ import net.neoforged.fml.config.ModConfig;
 import net.silvertide.kindred.config.ClientConfig;
 import net.silvertide.kindred.config.Config;
 import net.silvertide.kindred.registry.ModAttachments;
+import net.silvertide.kindred.registry.ModAttributes;
 import org.slf4j.Logger;
 
 @Mod(Kindred.MODID)
@@ -17,6 +18,7 @@ public class Kindred {
 
     public Kindred(IEventBus modBus, ModContainer container) {
         ModAttachments.register(modBus);
+        ModAttributes.register(modBus);
         container.registerConfig(ModConfig.Type.SERVER, Config.SPEC);
         container.registerConfig(ModConfig.Type.CLIENT, ClientConfig.SPEC);
     }

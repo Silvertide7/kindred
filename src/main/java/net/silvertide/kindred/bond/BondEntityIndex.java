@@ -8,9 +8,6 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
-// Index of bonded entities currently loaded in the world keyed off bondId.
-// Maintained incrementally via EntityJoinLevelEvent / EntityLeaveLevelEvent.
-// Used by BondService to avoid scanning every entity in every dimension on summon.
 public final class BondEntityIndex {
     private static final BondEntityIndex INSTANCE = new BondEntityIndex();
     private final Map<UUID, Entity> entitiesByBondId = new ConcurrentHashMap<>();

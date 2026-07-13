@@ -15,7 +15,6 @@ import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.silvertide.kindred.client.data.ClientRosterData;
-import net.silvertide.kindred.compat.pmmo.PmmoMode;
 import net.silvertide.kindred.config.Config;
 import net.silvertide.kindred.network.packet.C2SCheckBindCandidate;
 import net.silvertide.kindred.network.packet.C2SClaimEntity;
@@ -151,28 +150,8 @@ public final class BindFooter {
         return switch (key) {
             case "kindred.bind.deny.not_enough_xp" ->
                     Component.translatable(key, Config.BOND_XP_LEVEL_COST.get());
-            case "kindred.bind.deny.pmmo_locked" -> Component.translatable(
-                    key,
-                    Component.translatable("pmmo." + Config.PMMO_SKILL.get()),
-                    Config.PMMO_START_LEVEL.get());
-            case "kindred.bind.deny.at_capacity" -> resolveAtCapacityMessage(key);
             default -> Component.translatable(key);
         };
-    }
-
-    private Component resolveAtCapacityMessage(String fallbackKey) {
-        int currentBondCount = ClientRosterData.bonds().size();
-        boolean linearGrowth = Config.PMMO_ENABLED.get()
-                && Config.PMMO_MODE.get() == PmmoMode.LINEAR
-                && currentBondCount < Config.MAX_BONDS.get();
-        if (linearGrowth) {
-            int nextUnlockLevel = Config.PMMO_START_LEVEL.get()
-                    + currentBondCount * Config.PMMO_INCREMENT_PER_BOND.get();
-            return Component.translatable("kindred.bind.deny.pmmo_next_unlock",
-                    Component.translatable("pmmo." + Config.PMMO_SKILL.get()),
-                    nextUnlockLevel);
-        }
-        return Component.translatable(fallbackKey);
     }
 
     private int buttonY() {
@@ -217,12 +196,12 @@ public final class BindFooter {
 
     private static boolean isAtCapacity() {
         int cap = ClientRosterData.effectiveMaxBonds();
-        return cap == 0 || ClientRosterData.bonds().size() >= cap;
+        return cap <= 0 || ClientRosterData.bonds().size() >= cap;
     }
 
     private static String capacityDenyKey() {
-        return ClientRosterData.effectiveMaxBonds() == 0
-                ? "kindred.bind.deny.pmmo_locked"
+        return ClientRosterData.effectiveMaxBonds() <= 0
+                ? "kindred.bind.deny.locked"
                 : "kindred.bind.deny.at_capacity";
     }
 }

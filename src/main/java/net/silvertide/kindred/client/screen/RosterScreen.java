@@ -29,27 +29,15 @@ import static net.silvertide.kindred.client.screen.ScreenDrawUtil.entityTypeName
 import static net.silvertide.kindred.client.screen.ScreenDrawUtil.formatDurationCoarse;
 import static net.silvertide.kindred.client.screen.ScreenDrawUtil.inBox;
 
-/**
- * Roster screen with two-column layout: row list on the left, entity preview pane on
- * the right. Clicking anywhere on a row body (not on a button/star) selects it,
- * driving which pet renders in the preview pane. Default selection on open is the
- * active pet.
- *
- * <p>Preview rendering goes through {@link InventoryScreen#renderEntityInInventoryFollowsMouse}
- * with {@link LivingEntity} instances built lazily by {@link PreviewEntityCache} from
- * each bond's snapshot NBT.</p>
- */
 public final class RosterScreen extends Screen {
     private static final int PANEL_WIDTH = 400;
     private static final int ROW_W = 280;
     private static final int ROW_HEIGHT = 32;
     private static final int ROW_PAD = 4;
 
-    // Row internal layout: name + buttons share the top line, type · dim sits below.
     private static final int ROW_NAME_Y_OFFSET = 5;
     private static final int ROW_SUBTITLE_Y_OFFSET = 19;
 
-    // Row button layout — kept in one place so renderRow and mouseClicked stay in sync.
     private static final int ROW_BTN_H = 14;
     private static final int ROW_SUMMON_W = 48;
     private static final int ROW_DISMISS_W = 48;
@@ -59,7 +47,6 @@ public final class RosterScreen extends Screen {
     private static final int CLAIM_BTN_H = 20;
     private static final long BREAK_CONFIRM_TTL_MS = 3000L;
 
-    // ARGB palette
     private static final int C_BG = 0xCC101418;
     private static final int C_BORDER = 0xFF4A5568;
     private static final int C_SEPARATOR = 0xFF2A323C;
@@ -78,15 +65,10 @@ public final class RosterScreen extends Screen {
     private static final int C_BTN_DISMISS = 0xFF6A5A3A;
     private static final int C_BTN_DISMISS_HOVER = 0xFF8A7A52;
     private static final int C_BTN_DISMISS_DISABLED = 0xFF2A2620;
-    /** Dimmed label color for disabled buttons — pairs with the darker disabled
-     *  background to make "this can't be clicked" obvious at a glance. */
     private static final int C_BTN_TEXT_DISABLED = 0xFF6F6A60;
     private static final int C_STAR_ACTIVE = 0xFFE7B43B;
     private static final int C_RENAME_EDIT_TEXT = 0xFFE7B43B;
     private static final int C_STAR_INACTIVE = 0xFF4A5260;
-    /** Radial cooldown indicator: light wedge that drains counter-clockwise as
-     *  the cooldown elapses. Drawn centered on the Summon button (replaces the
-     *  text label entirely while the cooldown is running). */
     private static final int C_PIE_FILL = 0xFFB0C4D8;
     private static final int C_PIE_RADIUS = 5;
 
@@ -106,22 +88,10 @@ public final class RosterScreen extends Screen {
     private UUID breakArmedBondId = null;
     private long breakArmedExpiresAt = 0L;
 
-    /** Tracks which row button the mouse is currently pressing. Null when no
-     *  button is held.
-     *
-     *  <p>Purely client UX — progress and completion live entirely on the
-     *  server (see {@link HoldActionState} for the server-pushed view). This
-     *  field exists only so the screen can detect mouse-up, drag-off, and
-     *  scrolled-out and send {@link C2SCancelHold} when any of those happen. */
     private RowHold rowHold = null;
 
-    /** Which screen-row button initiated the hold. {@code BREAK} is shown via
-     *  the Confirm button that replaces Dismiss+X after the small X is clicked. */
     private enum RowHoldAction { SUMMON, DISMISS, BREAK }
 
-    /** Identifies a pressed row button by (bondId, action). No timing data —
-     *  that's all server-side; the client only needs to know which button is
-     *  being pressed for cancel-on-release / drag-off detection. */
     private record RowHold(UUID bondId, RowHoldAction action) {}
 
     private final RenameEditor renameEditor = new RenameEditor();
@@ -162,14 +132,6 @@ public final class RosterScreen extends Screen {
         bindFooter.onCandidateResult(entityUUID, canBind, denyKey);
     }
 
-    /**
-     * Screen close hook. Runs on Esc, when replaced by another screen, and on
-     * disconnect. We drop the entity preview cache and — if a row hold was
-     * active when the screen closed — tell the server to cancel it so the
-     * {@link net.silvertide.kindred.bond.HoldManager} entry doesn't outlive the
-     * screen that owned it. The cancel helper internally null-checks the
-     * connection, so the disconnect path is safe.
-     */
     @Override
     public void removed() {
         super.removed();
@@ -180,10 +142,6 @@ public final class RosterScreen extends Screen {
 
     @Override
     public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
-        // Validate the active row-hold (if any) before drawing — cancels via
-        // C2SCancelHold if the cursor drifted off, the row scrolled out, or the
-        // bond was removed under us. Completion itself runs server-side; this
-        // just keeps the local press state honest.
         processRowHold(mouseX, mouseY);
         bindFooter.tickHold(mouseX, mouseY);
 
@@ -194,13 +152,10 @@ public final class RosterScreen extends Screen {
 
         g.drawCenteredString(font, getTitle(), leftPos + PANEL_WIDTH / 2, topPos + 8, C_TEXT);
 
-        // Bond count (e.g. "3/10") — left-aligned in title bar, mirrors the cooldown
-        // indicator on the right.
         int bondCount = ClientRosterData.bonds().size();
         int maxBonds = ClientRosterData.effectiveMaxBonds();
         g.drawString(font, bondCount + "/" + maxBonds, leftPos + 6, topPos + 8, C_TEXT_MUTED);
 
-        // Global cooldown indicator (only when active). Right-aligned in title bar.
         if (ClientRosterData.isGlobalSummonOnCooldown()) {
             long remainingMs = ClientRosterData.globalCooldownRemainingMsNow();
             Component text = Component.translatable("kindred.screen.summon_cooldown",
@@ -209,7 +164,6 @@ public final class RosterScreen extends Screen {
             g.drawString(font, text, leftPos + PANEL_WIDTH - 6 - tw, topPos + 8, C_TEXT_MUTED);
         }
 
-        // Vertical separator between rows column and preview pane
         g.fill(separatorX, rowsTop, separatorX + 1, rowsBottom, C_SEPARATOR);
 
         previewPane.refreshSelection();
@@ -233,24 +187,9 @@ public final class RosterScreen extends Screen {
         bindFooter.render(g, font, mouseX, mouseY);
     }
 
-
-
-    /**
-     * Each render frame, validate that the active row-hold is still in a valid
-     * state — row still exists, still on-screen, cursor still over the button.
-     * If any of those fail, cancel the hold (locally and tell the server).
-     *
-     * <p>Note this method does NOT tick completion — server-side
-     * {@link net.silvertide.kindred.bond.HoldManager#tickAll} owns that. The
-     * screen only watches for client-side cancel conditions and reads
-     * {@link HoldActionState#progress()} during render for the visual fill.</p>
-     */
     private void processRowHold(int mouseX, int mouseY) {
         if (rowHold == null) return;
 
-        // Locate the held row in the (possibly resorted) bond list. The list
-        // can change between ticks via S2CRosterSync, so we re-resolve every
-        // frame rather than caching an index.
         List<BondView> bonds = ClientRosterData.bonds();
         int rowIndex = -1;
         for (int i = 0; i < bonds.size(); i++) {
@@ -260,22 +199,16 @@ public final class RosterScreen extends Screen {
             }
         }
         if (rowIndex < 0) {
-            // Bond gone from under us (broken, removed, etc.) — abort.
             cancelRowHoldAndNotifyServer();
             return;
         }
 
         int rowY = rowsTop + (rowIndex - scrollOffset) * ROW_HEIGHT;
         if (rowY + ROW_HEIGHT - 2 <= rowsTop || rowY >= rowsBottom) {
-            // Row scrolled out of view — cancel so the player isn't holding an
-            // invisible button.
             cancelRowHoldAndNotifyServer();
             return;
         }
 
-        // Compute the button rect for the action being held. Layout mirrors
-        // mouseClicked and renderRow so the drag-off check matches the actual
-        // button geometry exactly.
         int rowLeftX = leftPos + ROW_PAD;
         int buttonHeight = ROW_HEIGHT - 10;
         int buttonY = rowY + 4;
@@ -303,9 +236,6 @@ public final class RosterScreen extends Screen {
         }
 
         if (!inBox(mouseX, mouseY, heldButtonX, buttonY, heldButtonWidth, buttonHeight)) {
-            // Mouse drifted off the button. Mimics the keybind's "release means
-            // cancel" contract — server validates the actual button geometry
-            // didn't change, but for our purposes the cancel is unconditional.
             cancelRowHoldAndNotifyServer();
         }
     }
@@ -317,8 +247,6 @@ public final class RosterScreen extends Screen {
         int rowBg = selected ? C_ROW_SELECTED : (rowHover ? C_ROW_HOVER : C_ROW_BG);
         g.fill(x, y, x + w, y + rowH, rowBg);
 
-        // Diamond is a visual indicator only — clicking it does nothing now. Active is
-        // set via the "Set Active" button under the preview pane to avoid mis-clicks.
         int starCx = x + STAR_COL_W / 2;
         int starCy = y + rowH / 2;
         int starColor = bond.isActive() ? C_STAR_ACTIVE : C_STAR_INACTIVE;
@@ -336,9 +264,6 @@ public final class RosterScreen extends Screen {
         }
         g.drawString(font, name, textX, y + ROW_NAME_Y_OFFSET, nameColor);
 
-        // Subtitle below the button line: "Horse · Overworld" when loaded,
-        // "Horse · Limbo" while revival is pending (dead, respawn-locked),
-        // "Horse · Resting" when otherwise dismissed/stored.
         Component stateOrDim;
         if (ClientRosterData.isRevivalPending(bond)) {
             stateOrDim = Component.translatable("kindred.screen.state_limbo");
@@ -380,7 +305,7 @@ public final class RosterScreen extends Screen {
                 case SUMMON_BOND -> summonHoldProgress = progress;
                 case DISMISS -> dismissHoldProgress = progress;
                 case BREAK -> breakHoldProgress = progress;
-                case SUMMON_KEYBIND -> { /* keybind hold, rendered by HUD overlay */ }
+                case SUMMON_KEYBIND -> { }
             }
         }
 
@@ -514,9 +439,7 @@ public final class RosterScreen extends Screen {
             boolean armed = bond.bondId().equals(breakArmedBondId) && now < breakArmedExpiresAt;
             boolean summonHiddenByConfirm = armed && !dismissEnabled;
 
-            // Skip rows whose vertical area the click isn't on.
             if (my < rowY || my >= rowY + rowH) continue;
-            // And whose horizontal area the click isn't on.
             if (mx < x || mx >= x + ROW_W) continue;
 
             if (!summonHiddenByConfirm && inBox(mx, my, summonX, btnY, summonW, btnH)) {
@@ -543,9 +466,6 @@ public final class RosterScreen extends Screen {
                     return true;
                 }
                 if (inBox(mx, my, breakSmallX, btnY, breakSmallW, btnH)) {
-                    // Don't arm the confirm flow during revival — the server gate
-                    // would deny the eventual hold anyway, and arming would put
-                    // the row into a confusing half-state with no path forward.
                     if (ClientRosterData.isRevivalPending(bond)) return true;
                     breakArmedBondId = bond.bondId();
                     breakArmedExpiresAt = now + BREAK_CONFIRM_TTL_MS;
@@ -572,11 +492,6 @@ public final class RosterScreen extends Screen {
         return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
-    /**
-     * Left-mouse release → cancel any in-progress hold. Row holds notify the
-     * server (it owns those); the Bind button hold is purely client-side and
-     * just clears the timer.
-     */
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
         if (button == 0) {
@@ -586,22 +501,10 @@ public final class RosterScreen extends Screen {
         return super.mouseReleased(mouseX, mouseY, button);
     }
 
-    /**
-     * Called by {@link net.silvertide.kindred.client.network.ClientPacketHandler#onHoldStop}
-     * when the server has cleared the hold (damage, death, completion, etc.).
-     * Pure local cleanup — no packet sent, because the server already cancelled
-     * and is notifying US.
-     */
     public void cancelRowHold() {
         rowHold = null;
     }
 
-    /**
-     * Local clear plus {@link C2SCancelHold} to the server. Used when the
-     * client originates the cancel — drag-off, scroll-out, mouse release,
-     * screen close. The connection null-check guards against {@code removed()}
-     * firing during a disconnect tear-down where there's no server to send to.
-     */
     private void cancelRowHoldAndNotifyServer() {
         if (rowHold == null) return;
         rowHold = null;

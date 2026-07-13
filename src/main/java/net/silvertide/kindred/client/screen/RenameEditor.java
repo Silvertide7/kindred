@@ -70,7 +70,7 @@ public final class RenameEditor {
                     editBuffer = editBuffer.substring(0, editBuffer.length() - 1);
                 }
             }
-            default -> { /* swallow so global keybinds don't fire while typing */ }
+            default -> { }
         }
         return true;
     }

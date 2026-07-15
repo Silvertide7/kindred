@@ -16,7 +16,7 @@ public final class Config {
                      "attribute itself (not this config) is what bond-capacity checks read — use " +
                      "attribute modifiers (not base-value edits, which this sync overwrites) for " +
                      "per-player or mod-driven adjustments.")
-            .defineInRange("startingCompanionBonds", 10, 1, 64);
+            .defineInRange("startingCompanionBonds", 10, 0, 64);
 
     public static final ModConfigSpec.BooleanValue REQUIRE_SADDLEABLE = BUILDER
             .comment("",

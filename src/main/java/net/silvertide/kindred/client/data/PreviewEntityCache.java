@@ -17,17 +17,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
-/**
- * Lazy client-side cache of preview {@link LivingEntity} instances built from each
- * bond's snapshot NBT. The instances exist only for {@code InventoryScreen}'s render
- * API — they are never added to a level, never tick, and have no chunk presence.
- *
- * <p>Cache is cleared when the roster screen is removed, when a roster sync arrives, and on logout. Construction is on-demand: the first render
- * of a given bond builds and caches the entity; subsequent renders hit the cache.
- * The first render of a never-seen-this-session entity type pays a one-time
- * texture/model load (~50–100 ms) — that's a Minecraft-renderer cache miss, not
- * something we can avoid by caching entity instances.</p>
- */
 public final class PreviewEntityCache {
     private static final int ABSTRACT_HORSE_FLAG_SADDLE = 4;
 

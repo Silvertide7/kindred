@@ -157,3 +157,25 @@ Step 0 and Step 1 first, because they tell us which hypothesis is real. Step 2 i
 
 ## Review status
 Self-audit only. The independent reviewer pass (`/code-review`) has not been run, since there is no fix diff beyond the small adapter yet. Run it after Steps 1-3.
+
+# Release audit 1.2.0 (vanilla UI + text shadows)
+
+`./gradlew compileJava` passes. Sources: self-audit (S) and an independent reviewer (R). Scope: `git diff 9ec52fd -- client/ config/ClientConfig.java`.
+
+## Checked and fine
+- `blitNineSliced(WIDGETS_LOCATION, x, y, w, h, 20, 4, 200, 20, 0, textureY)` and the 46/66/86 texture rows match vanilla `AbstractButton` in 1.20.1. Small 14x14 buttons are safe.
+- Every text draw in the roster screen passes shadow `false`. `HoldActionOverlay` keeps its shadow on purpose (HUD, not the menu).
+- Hover is masked by enabled; accent tint only on the active Set Active button and the Break confirm button; draw order is background, accent, hold fill, text.
+- `PreviewEntityCache.failedBuilds` is cleared with the cache on roster sync, screen close, and logout.
+- Dropping the client-side `isOwnable` gate is safe: the server returns `NOT_OWNABLE`, which the client filters to show the generic hint.
+- `ClientConfig` static initializer order is correct; the new `ui.useVanillaUI` key defaults to false so existing configs are unaffected.
+
+## Low
+- [x] R1. (R) Scroll clamp ran after `processRowHold`, so a sync that shrank the list could cancel a hold that was still pressed. Clamp moved above the hold check.
+- [x] R2. (R) Selection stayed empty if the screen opened before the first roster sync. `PreviewPane.refreshSelection` now picks the active pet (or first bond) whenever nothing is selected, which made `selectActiveOnOpen` redundant; removed.
+- [x] R3. (S) Touched class javadocs on `PreviewEntityCache` and `RosterScreen` deleted per the style rules.
+
+## Release
+- [x] `mod_version` 1.1.1 -> 1.2.0, `CHANGELOG.md` rewritten for 1.2.0 (compat, vanilla UI, shadow removal, audit fixes).
+- [ ] Visual check of the vanilla roster screen in a client (V7 radial sweep still unchecked).
+- [ ] IDE Problems-tab export into `claude_reference/problems` (needs the user).

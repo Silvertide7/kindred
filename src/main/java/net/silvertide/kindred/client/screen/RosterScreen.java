@@ -34,16 +34,6 @@ import static net.silvertide.kindred.client.screen.ScreenDrawUtil.panelMutedText
 import static net.silvertide.kindred.client.screen.ScreenDrawUtil.panelTextColor;
 import static net.silvertide.kindred.client.screen.ScreenDrawUtil.vanillaStyle;
 
-/**
- * Roster screen with two-column layout: row list on the left, entity preview pane on
- * the right. Clicking anywhere on a row body (not on a button/star) selects it,
- * driving which pet renders in the preview pane. Default selection on open is the
- * active pet.
- *
- * <p>Preview rendering goes through {@code InventoryScreen#renderEntityInInventoryFollowsMouse}
- * with {@code LivingEntity} instances built lazily by {@link PreviewEntityCache} from
- * each bond's snapshot NBT.</p>
- */
 public final class RosterScreen extends Screen {
     private static final int PANEL_WIDTH = 400;
     private static final int ROW_W = 280;
@@ -137,7 +127,6 @@ public final class RosterScreen extends Screen {
 
     public RosterScreen() {
         super(Component.translatable("kindred.screen.title"));
-        previewPane.selectActiveOnOpen();
     }
 
     @Override
@@ -191,6 +180,7 @@ public final class RosterScreen extends Screen {
         // C2SCancelHold if the cursor drifted off, the row scrolled out, or the
         // bond was removed under us. Completion itself runs server-side; this
         // just keeps the local press state honest.
+        scrollOffset = Math.min(scrollOffset, maxScrollOffset());
         processRowHold(mouseX, mouseY);
         bindFooter.tickHold(mouseX, mouseY);
 
@@ -226,7 +216,6 @@ public final class RosterScreen extends Screen {
         previewPane.refreshSelection();
 
         List<BondView> bonds = ClientRosterData.bonds();
-        scrollOffset = Math.min(scrollOffset, maxScrollOffset());
         if (bonds.isEmpty()) {
             drawCenteredText(g, font, Component.translatable("kindred.screen.empty"),
                     leftPos + ROW_PAD + ROW_W / 2, (rowsTop + rowsBottom) / 2 - 4, panelMutedTextColor());

@@ -1,3 +1,15 @@
 ## 1.2.0
 ---
-- Add compat for Jurassic Reborn, Petting - tame any pet, and Ash
+- Add compat for Jurassic Reborn, Petting - tame any pet, and Familiars Lib
+- New client config `useVanillaUI` renders the roster screen with a vanilla-style panel and buttons
+- Roster screen text no longer has drop shadows
+- Fix Petting-tamed mobs not being bondable from the roster screen
+- `/kindred break` now respects the revival cooldown
+- Summoning no longer targets a dying pet
+- Pet deaths cancelled by another mod no longer start the revival cooldown
+- Summon walk-range check now uses full 3D distance, so pets far above or below teleport instead of pathing
+- Roster sync packets are trimmed and rate-limited
+- `/kindred` commands now refresh the roster screen
+- Fix roster list looking empty after breaking a bond while scrolled down
+- Fix roster selection resetting on window resize
+- Undecodable bond data on an entity is cleared with a warning instead of crashing the server

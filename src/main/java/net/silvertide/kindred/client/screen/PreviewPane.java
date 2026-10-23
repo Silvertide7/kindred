@@ -60,10 +60,6 @@ public final class PreviewPane {
         this.rowsBottom = rowsBottom;
     }
 
-    public void selectActiveOnOpen() {
-        ClientRosterData.findActive().ifPresent(bv -> selectedBondId = bv.bondId());
-    }
-
     public boolean isSelected(UUID bondId) {
         return selectedBondId != null && selectedBondId.equals(bondId);
     }
@@ -74,11 +70,11 @@ public final class PreviewPane {
 
     public void refreshSelection() {
         List<BondView> bonds = ClientRosterData.bonds();
-        if (selectedBondId != null && bonds.stream().noneMatch(b -> b.bondId().equals(selectedBondId))) {
-            selectedBondId = ClientRosterData.findActive()
-                    .map(BondView::bondId)
-                    .orElseGet(() -> bonds.isEmpty() ? null : bonds.get(0).bondId());
-        }
+        boolean selectionValid = selectedBondId != null && bonds.stream().anyMatch(b -> b.bondId().equals(selectedBondId));
+        if (selectionValid) return;
+        selectedBondId = ClientRosterData.findActive()
+                .map(BondView::bondId)
+                .orElseGet(() -> bonds.isEmpty() ? null : bonds.get(0).bondId());
     }
 
     public void render(GuiGraphics graphics, Font font, int mouseX, int mouseY) {

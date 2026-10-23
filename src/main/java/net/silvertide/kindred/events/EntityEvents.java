@@ -9,6 +9,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
+import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.event.entity.EntityJoinLevelEvent;
@@ -38,7 +39,13 @@ public final class EntityEvents {
         Entity entity = event.getEntity();
         if (!KindredData.isBonded(entity)) return;
 
-        Bonded bonded = KindredData.getBonded(entity).orElseThrow();
+        Optional<Bonded> maybeBonded = KindredData.getBonded(entity);
+        if (maybeBonded.isEmpty()) {
+            KindredData.removeBonded(entity);
+            Kindred.LOGGER.warn("[kindred] removed undecodable bond data from {}", entity.getType());
+            return;
+        }
+        Bonded bonded = maybeBonded.get();
         KindredSavedData saved = KindredSavedData.get(level);
 
         int worldRevision = saved.getRevision(bonded.bondId());
@@ -71,21 +78,23 @@ public final class EntityEvents {
     public static void onEntityLeaveLevel(EntityLeaveLevelEvent event) {
         if (!(event.getLevel() instanceof ServerLevel level)) return;
         Entity entity = event.getEntity();
-        if (!KindredData.isBonded(entity)) return;
+        Optional<Bonded> maybeBonded = KindredData.getBonded(entity);
+        if (maybeBonded.isEmpty()) return;
 
-        Bonded bonded = KindredData.getBonded(entity).orElseThrow();
+        Bonded bonded = maybeBonded.get();
         BondEntityIndex.get().untrack(bonded.bondId(), entity);
 
         snapshotEntity(level, entity, bonded);
     }
 
-    @SubscribeEvent
+    @SubscribeEvent(priority = EventPriority.LOWEST)
     public static void onLivingDeath(LivingDeathEvent event) {
         Entity entity = event.getEntity();
-        if (!KindredData.isBonded(entity)) return;
         if (!(entity.level() instanceof ServerLevel level)) return;
 
-        Bonded bonded = KindredData.getBonded(entity).orElseThrow();
+        Optional<Bonded> maybeBonded = KindredData.getBonded(entity);
+        if (maybeBonded.isEmpty()) return;
+        Bonded bonded = maybeBonded.get();
 
         if (Config.DEATH_IS_PERMANENT.get()) {
             ServerPlayer owner = level.getServer().getPlayerList().getPlayer(bonded.ownerUUID());

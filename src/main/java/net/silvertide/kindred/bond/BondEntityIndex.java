@@ -1,6 +1,7 @@
 package net.silvertide.kindred.bond;
 
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
 
 import java.util.Map;
 import java.util.function.BiConsumer;
@@ -34,8 +35,12 @@ public final class BondEntityIndex {
 
     public Optional<Entity> find(UUID bondId) {
         Entity entity = entitiesByBondId.get(bondId);
-        if (entity == null || entity.isRemoved()) return Optional.empty();
+        if (entity == null || entity.isRemoved() || isDying(entity)) return Optional.empty();
         return Optional.of(entity);
+    }
+
+    private static boolean isDying(Entity entity) {
+        return entity instanceof LivingEntity living && living.isDeadOrDying();
     }
 
     public void forEachLoaded(BiConsumer<UUID, Entity> action) {

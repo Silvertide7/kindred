@@ -57,7 +57,7 @@ public final class Config {
 
     public static final ForgeConfigSpec.BooleanValue REQUIRE_SPACE = BUILDER
             .comment("",
-                     "If true, refuse to summon when the 3x3x3 space around the player is obstructed.")
+                     "If true, refuse to summon when the area around the player (5x5 footprint) is obstructed.")
             .define("requireSpace", true);
 
     public static final ForgeConfigSpec.BooleanValue ALLOW_WATER_SUMMON = BUILDER

@@ -111,6 +111,7 @@ public final class PlayerEvents {
         if (!(event.getEntity() instanceof ServerPlayer player)) return;
         flushLoadedSnapshots(player);
         HoldManager.get().cancel(player);
+        ServerPacketHandler.forgetRosterPacketRate(player);
     }
 
     @SubscribeEvent

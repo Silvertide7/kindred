@@ -32,10 +32,6 @@ public final class CompanionAdapters {
         return Optional.empty();
     }
 
-    public static boolean isOwnable(Entity entity) {
-        return adapterFor(entity).isPresent();
-    }
-
     public static void wake(Entity entity) {
         adapterFor(entity).ifPresent(adapter -> adapter.wake(entity));
     }

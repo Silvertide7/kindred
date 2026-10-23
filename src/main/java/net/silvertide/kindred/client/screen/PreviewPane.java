@@ -5,11 +5,11 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.LivingEntity;
-import net.silvertide.kindred.network.Networking;
 import net.silvertide.kindred.client.data.ClientRosterData;
 import net.silvertide.kindred.client.data.PreviewEntityCache;
 import net.silvertide.kindred.config.Config;
 import net.silvertide.kindred.network.BondView;
+import net.silvertide.kindred.network.Networking;
 import net.silvertide.kindred.network.packet.C2SReorderBond;
 import net.silvertide.kindred.network.packet.C2SSetActivePet;
 
@@ -17,8 +17,12 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import net.silvertide.kindred.client.screen.ScreenDrawUtil.ButtonState;
+
 import static net.silvertide.kindred.client.screen.ScreenDrawUtil.drawButton;
+import static net.silvertide.kindred.client.screen.ScreenDrawUtil.drawCenteredText;
 import static net.silvertide.kindred.client.screen.ScreenDrawUtil.inBox;
+import static net.silvertide.kindred.client.screen.ScreenDrawUtil.panelMutedTextColor;
 
 public final class PreviewPane {
     private static final int PREVIEW_W = 100;
@@ -33,9 +37,6 @@ public final class PreviewPane {
     private static final int MAX_ENTITY_SCALE = 60;
     private static final int MOUSE_Y_PITCH_CLAMP_BAND = 8;
 
-    private static final int C_TEXT = 0xFFFFFFFF;
-    private static final int C_TEXT_MUTED = 0xFF8FA0B0;
-    private static final int C_BTN_TEXT_DISABLED = 0xFF6F6A60;
     private static final int C_BTN_CLAIM = 0xFF3D5C8A;
     private static final int C_BTN_CLAIM_HOVER = 0xFF5278B0;
     private static final int C_BTN_DISABLED_EDGE = 0xFF2A2620;
@@ -83,8 +84,8 @@ public final class PreviewPane {
     public void render(GuiGraphics graphics, Font font, int mouseX, int mouseY) {
         BondView selected = currentSelection();
         if (selected == null) {
-            graphics.drawCenteredString(font, Component.translatable("kindred.screen.preview_empty"),
-                    previewX + PREVIEW_W / 2, (rowsTop + rowsBottom) / 2 - 4, C_TEXT_MUTED);
+            drawCenteredText(graphics, font, Component.translatable("kindred.screen.preview_empty"),
+                    previewX + PREVIEW_W / 2, (rowsTop + rowsBottom) / 2 - 4, panelMutedTextColor());
             return;
         }
 
@@ -152,10 +153,10 @@ public final class PreviewPane {
 
         LivingEntity previewEntity = PreviewEntityCache.getOrBuild(selected);
         if (previewEntity == null) {
-            graphics.drawCenteredString(font, Component.translatable("kindred.screen.preview_unavailable"),
+            drawCenteredText(graphics, font, Component.translatable("kindred.screen.preview_unavailable"),
                     previewX + PREVIEW_W / 2,
                     (entityRenderTop + entityRenderBottom) / 2 - 4,
-                    C_TEXT_MUTED);
+                    panelMutedTextColor());
             return;
         }
 
@@ -225,10 +226,10 @@ public final class PreviewPane {
 
         drawButton(graphics, font, moveUpX, moveY, moveHalfW, ACTION_BTN_H,
                 Component.translatable("kindred.screen.move_up"),
-                moveUpColor, 0F, canMoveUp ? C_TEXT : C_BTN_TEXT_DISABLED);
+                moveUpColor, ButtonState.of(canMoveUp, moveUpHover));
         drawButton(graphics, font, moveDownX, moveY, moveDownW, ACTION_BTN_H,
                 Component.translatable("kindred.screen.move_down"),
-                moveDownColor, 0F, canMoveDown ? C_TEXT : C_BTN_TEXT_DISABLED);
+                moveDownColor, ButtonState.of(canMoveDown, moveDownHover));
     }
 
     private void renderRenameButton(GuiGraphics graphics, Font font, BondView selected,
@@ -241,7 +242,8 @@ public final class PreviewPane {
                 ? C_BTN_CLAIM_HOVER
                 : (renameHover ? C_BTN_CLAIM_HOVER : C_BTN_CLAIM);
         drawButton(graphics, font, buttonsX, renameY, buttonsW, ACTION_BTN_H,
-                Component.translatable("kindred.screen.rename"), renameColor);
+                Component.translatable("kindred.screen.rename"), renameColor,
+                ButtonState.of(true, renameHover || editingThis));
     }
 
     private void renderSetActiveButton(GuiGraphics graphics, Font font, BondView selected,
@@ -256,7 +258,10 @@ public final class PreviewPane {
         int color = isAlreadyActive
                 ? C_STAR_ACTIVE
                 : (setActiveHover ? C_BTN_CLAIM_HOVER : C_BTN_CLAIM);
-        drawButton(graphics, font, buttonsX, setActiveY, buttonsW, ACTION_BTN_H, label, color);
+        drawButton(graphics, font, buttonsX, setActiveY, buttonsW, ACTION_BTN_H, label, color,
+                isAlreadyActive
+                        ? ButtonState.of(true, false).withAccent(C_STAR_ACTIVE)
+                        : ButtonState.of(true, setActiveHover));
     }
 
     private int paneBottom() {

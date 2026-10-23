@@ -132,7 +132,5 @@ public final class KeybindHandler {
         return null;
     }
 
-    private KeybindHandler() {
-        Kindred.LOGGER.trace("KeybindHandler init");
-    }
+    private KeybindHandler() {}
 }

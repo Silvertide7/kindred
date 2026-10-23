@@ -3,5 +3,6 @@ package net.silvertide.kindred.bond.bond_results;
 public enum BreakResult {
     BROKEN,
     NO_SUCH_BOND,
-    RELEASE_FAILED
+    RELEASE_FAILED,
+    REVIVAL_PENDING
 }

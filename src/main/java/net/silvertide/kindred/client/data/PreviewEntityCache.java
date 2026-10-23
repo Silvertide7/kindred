@@ -12,7 +12,9 @@ import net.silvertide.kindred.Kindred;
 import net.silvertide.kindred.network.BondView;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -20,7 +22,7 @@ import java.util.UUID;
  * bond's snapshot NBT. The instances exist only for {@code InventoryScreen}'s render
  * API — they are never added to a level, never tick, and have no chunk presence.
  *
- * <p>Cache is cleared on screen close. Construction is on-demand: the first render
+ * <p>Cache is cleared when the roster screen is removed, when a roster sync arrives, and on logout. Construction is on-demand: the first render
  * of a given bond builds and caches the entity; subsequent renders hit the cache.
  * The first render of a never-seen-this-session entity type pays a one-time
  * texture/model load (~50–100 ms) — that's a Minecraft-renderer cache miss, not
@@ -30,12 +32,15 @@ public final class PreviewEntityCache {
     private static final int ABSTRACT_HORSE_FLAG_SADDLE = 4;
 
     private static final Map<UUID, LivingEntity> cache = new HashMap<>();
+    private static final Set<UUID> failedBuilds = new HashSet<>();
 
     public static LivingEntity getOrBuild(BondView view) {
         LivingEntity cached = cache.get(view.bondId());
         if (cached != null) return cached;
+        if (failedBuilds.contains(view.bondId())) return null;
         LivingEntity built = build(view);
         if (built != null) cache.put(view.bondId(), built);
+        else failedBuilds.add(view.bondId());
         return built;
     }
 
@@ -88,6 +93,7 @@ public final class PreviewEntityCache {
 
     public static void clear() {
         cache.clear();
+        failedBuilds.clear();
     }
 
     private PreviewEntityCache() {}

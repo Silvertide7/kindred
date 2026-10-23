@@ -27,8 +27,10 @@ import net.silvertide.kindred.bond.BondService;
 import net.silvertide.kindred.bond.GlobalSummonCooldownTracker;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 
 public final class ServerPacketHandler {
@@ -39,6 +41,7 @@ public final class ServerPacketHandler {
     public static void onOpenRoster(C2SOpenRoster payload, Supplier<NetworkEvent.Context> context) {
         ServerPlayer player = context.get().getSender();
         if (player == null) return;
+        if (isRosterPacketRateLimited(player)) return;
         sendRosterSync(player);
     }
 
@@ -112,10 +115,27 @@ public final class ServerPacketHandler {
     }
 
     private static final int MAX_NAME_LEN = 32;
+    private static final int MIN_TICKS_BETWEEN_ROSTER_PACKETS = 2;
+
+    private static final Map<UUID, Integer> lastRosterPacketTickByPlayer = new ConcurrentHashMap<>();
+
+    private static boolean isRosterPacketRateLimited(ServerPlayer player) {
+        int nowTick = player.server.getTickCount();
+        Integer lastTick = lastRosterPacketTickByPlayer.put(player.getUUID(), nowTick);
+        return lastTick != null && nowTick - lastTick < MIN_TICKS_BETWEEN_ROSTER_PACKETS;
+    }
+
+    public static void forgetRosterPacketRate(ServerPlayer player) {
+        lastRosterPacketTickByPlayer.remove(player.getUUID());
+    }
+
+    private static final List<String> PREVIEW_EXCLUDED_NBT_KEYS =
+            List.of("Items", "Brain", "ForgeData", "ForgeCaps", "Motion", "Passengers", "Leash");
 
     public static void onRenameBond(C2SRenameBond payload, Supplier<NetworkEvent.Context> context) {
         ServerPlayer player = context.get().getSender();
         if (player == null) return;
+        if (isRosterPacketRateLimited(player)) return;
         if (!Config.ALLOW_RENAME.get()) return;
         BondRoster roster = KindredData.getRoster(player);
         Optional<Bond> bond = roster.get(payload.bondId());
@@ -142,6 +162,7 @@ public final class ServerPacketHandler {
     public static void onReorderBond(C2SReorderBond payload, Supplier<NetworkEvent.Context> context) {
         ServerPlayer player = context.get().getSender();
         if (player == null) return;
+        if (isRosterPacketRateLimited(player)) return;
         BondRoster roster = KindredData.getRoster(player);
         BondRoster updated = roster.withMoved(payload.bondId(), payload.delta());
         if (updated != roster) {
@@ -153,6 +174,7 @@ public final class ServerPacketHandler {
     public static void onSetActivePet(C2SSetActivePet payload, Supplier<NetworkEvent.Context> context) {
         ServerPlayer player = context.get().getSender();
         if (player == null) return;
+        if (isRosterPacketRateLimited(player)) return;
         BondRoster roster = KindredData.getRoster(player);
         BondRoster updated = roster.withActive(payload.bondId());
         if (updated != roster) {
@@ -178,7 +200,7 @@ public final class ServerPacketHandler {
                     CompoundTag nbt = (loaded
                             ? live.get().saveWithoutId(new CompoundTag())
                             : b.nbtSnapshot().copy());
-                    nbt.remove("Items");
+                    PREVIEW_EXCLUDED_NBT_KEYS.forEach(nbt::remove);
                     return BondView.from(b, roster.isActive(b.bondId()), loaded, remaining, revivalRemaining, nbt);
                 })
                 .toList();

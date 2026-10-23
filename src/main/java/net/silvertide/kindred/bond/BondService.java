@@ -132,6 +132,7 @@ public final class BondService {
         BondRoster roster = KindredData.getRoster(player);
         Optional<Bond> maybeBond = roster.get(bondId);
         if (maybeBond.isEmpty()) return BreakResult.NO_SUCH_BOND;
+        if (isRevivalPending(maybeBond.get())) return BreakResult.REVIVAL_PENDING;
 
         ServerLevel level = (ServerLevel) player.level();
         KindredSavedData saved = KindredSavedData.get(level);
@@ -248,9 +249,7 @@ public final class BondService {
             ResourceKey<Level> oldDim = old.level().dimension();
 
             if (oldDim.equals(playerDim)) {
-                double dx = old.getX() - player.getX();
-                double dz = old.getZ() - player.getZ();
-                double distSq = dx * dx + dz * dz;
+                double distSq = old.distanceToSqr(player);
                 double walkRange = Config.WALK_RANGE.get();
 
                 if (distSq <= walkRange * walkRange && old instanceof Mob mob) {
@@ -286,7 +285,7 @@ public final class BondService {
 
         // This probably isn't necessary, but in the case that a chunk crashes while the tp is happening this will guarantee de-duping the entity.
         int newRevision = saved.incrementRevision(bondId);
-        KindredData.setBonded(old, KindredData.getBonded(old).orElseThrow().withRevision(newRevision));
+        KindredData.setBonded(old, new Bonded(bondId, player.getUUID(), newRevision));
 
         playSummonFx(level, spawnPos.x, spawnPos.y, spawnPos.z, true);
 
@@ -348,7 +347,7 @@ public final class BondService {
         if (teleported instanceof LivingEntity teleportedLiving) freshenForSummon(teleportedLiving);
 
         int newRevision = saved.incrementRevision(bondId);
-        KindredData.setBonded(teleported, KindredData.getBonded(teleported).orElseThrow().withRevision(newRevision));
+        KindredData.setBonded(teleported, new Bonded(bondId, player.getUUID(), newRevision));
 
         playSummonFx(targetLevel, spawnPos.x, spawnPos.y, spawnPos.z, true);
 

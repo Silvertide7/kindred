@@ -4,7 +4,6 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.player.LocalPlayer;
-import net.minecraftforge.registries.ForgeRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.Saddleable;
@@ -12,28 +11,35 @@ import net.minecraft.world.entity.projectile.ProjectileUtil;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.Vec3;
-import net.silvertide.kindred.bond.CompanionAdapters;
-import net.silvertide.kindred.network.Networking;
+import net.minecraftforge.registries.ForgeRegistries;
 import net.silvertide.kindred.client.data.ClientRosterData;
 import net.silvertide.kindred.config.Config;
+import net.silvertide.kindred.network.Networking;
 import net.silvertide.kindred.network.packet.C2SCheckBindCandidate;
 import net.silvertide.kindred.network.packet.C2SClaimEntity;
 
 import java.util.Optional;
 import java.util.UUID;
 
+import net.silvertide.kindred.client.screen.ScreenDrawUtil.ButtonState;
+
 import static net.silvertide.kindred.client.screen.ScreenDrawUtil.drawButton;
+import static net.silvertide.kindred.client.screen.ScreenDrawUtil.drawCenteredText;
 import static net.silvertide.kindred.client.screen.ScreenDrawUtil.inBox;
+import static net.silvertide.kindred.client.screen.ScreenDrawUtil.panelMutedTextColor;
+import static net.silvertide.kindred.client.screen.ScreenDrawUtil.vanillaStyle;
 
 public final class BindFooter {
     private static final double CLAIM_RAYCAST_DISTANCE = 8.0D;
     private static final long BIND_HOLD_MS = 1000L;
     private static final int BUTTON_HEIGHT = 20;
 
-    private static final int C_TEXT_MUTED = 0xFF8FA0B0;
     private static final int C_BTN_CLAIM = 0xFF3D5C8A;
     private static final int C_BTN_CLAIM_HOVER = 0xFF5278B0;
     private static final int C_XP_COST_UNAFFORDABLE = 0xFFE57878;
+    private static final int C_XP_COST_UNAFFORDABLE_VANILLA = 0xFFAA0000;
+
+    private static final String NOT_OWNABLE_DENY_KEY = "kindred.bind.deny.not_ownable";
 
     private Entity raycastCandidate;
     private Boolean serverBindEligibility;
@@ -74,7 +80,7 @@ public final class BindFooter {
         if (raycastCandidate == null) return;
         if (!entityUuid.equals(raycastCandidate.getUUID())) return;
         serverBindEligibility = canBind ? Boolean.TRUE : Boolean.FALSE;
-        serverDenyKey = canBind ? Optional.empty() : denyKeyFromServer;
+        serverDenyKey = canBind ? Optional.empty() : denyKeyFromServer.filter(key -> !key.equals(NOT_OWNABLE_DENY_KEY));
     }
 
     public boolean tryHandleClick(int mouseX, int mouseY) {
@@ -117,10 +123,15 @@ public final class BindFooter {
             Component label = Component.translatable("kindred.screen.bind", entityTypePath);
             drawButton(graphics, font, buttonX, currentButtonY, buttonW, BUTTON_HEIGHT, label,
                     hover ? C_BTN_CLAIM_HOVER : C_BTN_CLAIM,
-                    holdProgress());
+                    holdProgress(),
+                    ButtonState.of(true, hover));
             return;
         }
         renderDenyOrHint(graphics, font);
+    }
+
+    private int unaffordableColor() {
+        return vanillaStyle() ? C_XP_COST_UNAFFORDABLE_VANILLA : C_XP_COST_UNAFFORDABLE;
     }
 
     private void renderXpCostLine(GuiGraphics graphics, Font font, int xpCost) {
@@ -128,9 +139,9 @@ public final class BindFooter {
         boolean canAfford = player == null
                 || player.getAbilities().instabuild
                 || player.experienceLevel >= xpCost;
-        int color = canAfford ? C_TEXT_MUTED : C_XP_COST_UNAFFORDABLE;
+        int color = canAfford ? panelMutedTextColor() : unaffordableColor();
         Component label = Component.translatable("kindred.bind.cost", xpCost);
-        graphics.drawCenteredString(font, label, buttonX + buttonW / 2, costLineY, color);
+        drawCenteredText(graphics, font, label, buttonX + buttonW / 2, costLineY, color);
     }
 
     private void renderDenyOrHint(GuiGraphics graphics, Font font) {
@@ -140,10 +151,10 @@ public final class BindFooter {
         Component message = effectiveDenyKey
                 .map(this::resolveDenyMessage)
                 .orElse(Component.translatable("kindred.screen.bind_hint"));
-        graphics.drawCenteredString(font, message,
+        drawCenteredText(graphics, font, message,
                 buttonX + buttonW / 2,
                 buttonAnchorY + (BUTTON_HEIGHT - font.lineHeight) / 2 + 1,
-                C_TEXT_MUTED);
+                panelMutedTextColor());
     }
 
     private Component resolveDenyMessage(String key) {
@@ -189,7 +200,6 @@ public final class BindFooter {
     }
 
     private static boolean passesClientGates(Entity entity) {
-        if (!CompanionAdapters.isOwnable(entity)) return false;
         if (Config.REQUIRE_SADDLEABLE.get() && !(entity instanceof Saddleable)) return false;
         return true;
     }

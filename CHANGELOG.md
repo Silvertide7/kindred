@@ -1,5 +1,6 @@
 ## 1.3.0
 ---
+- Add Simplified Chinese translation (thanks nil0bug)
 - Pet nametags now only show while you look at the pet, like vanilla name tags. New server config `alwaysShowPetNames` brings back always-visible nametags
 - Pets released from a bond get vanilla nametag behavior back
 - New client config `useVanillaUI` renders the roster screen with a vanilla-style panel and buttons

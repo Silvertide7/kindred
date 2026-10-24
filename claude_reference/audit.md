@@ -53,3 +53,30 @@ Self-audit (S) found no style or dead-code issues. Independent reviewer (R) find
 - [ ] R-F (low, accepted). Changing `alwaysShowPetNames` while the server runs only affects loaded pets after they reload, are summoned or renamed.
 - [ ] Note (accepted). Petting's separate area binding (`pettingbound`) is left untouched by summon; a pet bound to an area may walk back to it.
 - [ ] In-game check: wolf sat via Petting then summoned; Petting pet in waiting mode summoned; nametag toggle both ways.
+
+# Auto-Mount port audit (main, NeoForge 1.21.1)
+
+Port of the 1.20.1 Auto-Mount feature. `./gradlew compileJava` passes. Not tested in-game. Sources: self-audit (S) against the 1.21.1 NeoForge-patched sources, and an independent reviewer (R).
+
+## Fixed
+- [x] 1. (R) Auto-mount skipped the spawn locator's water rules: with `allowWaterSummon=false` a player on a river bed got a horse spawned underwater, and with it on, a swimming player was mounted then thrown off (horses are in `#dismounts_underwater`). `isPlayerReadyToMount` now requires `!player.isInWater()`, so those summons fall back to the normal path.
+- [x] 2. (R) `startRiding(pet, true)` skipped `canAddPassenger`, so modded mounts that restrict riders (owner-only, growth stage, passenger caps) were mounted against their own rules. Now the unforced `startRiding(pet)`, matching vanilla and the "if it shouldn't be mounted, it isn't" rule. Cost: a summon within 3 seconds of dismounting leaves the pet beside you unmounted.
+- [x] 3. (R) Horses summoned mid-eat or mid-rear kept that state while ridden. New `mountPet` helper clears `setEating`/`setStanding` like vanilla `doPlayerRide`, and replaces the three `startRiding` call sites.
+- [x] 4. (R) Room check used `getType().getDimensions()`, ignoring the 1.21 `generic.scale` attribute. Now `pet.getDimensions(Pose.STANDING)`.
+
+## Declined
+- [x] 5. (R) `C_CHECKBOX_ACCENT` has the same value as `C_BTN_CLAIM_HOVER`. Kept separate on purpose (an earlier review split them so retheming one doesn't change the other).
+- [x] 6. (R) `findSummonPosition` / `NO_SPACE` / `get()` three-line block repeats in three places. Reviewer agreed it isn't worth an abstraction.
+
+## Open
+- [ ] 7. (S) Fixes 1–4 exist only on main. The 1-20-1 branch has the same code; port them if 1.20.1 gets another release.
+- [ ] 8. (S) The git-ignored `CLAUDE.md` is shared across branches and describes the Forge 1.20.1 port, so it is inaccurate on main (attachments, payloads, `entity_type/` tag folder).
+
+## Checked and fine
+- Every 1.20.1 feature file is ported; the tag lives in the 1.21 singular `tags/entity_type/` folder.
+- Vanilla 1.21.1: `Llama.isSaddleable()` is false, `AbstractHorse.isSaddleable()` requires `isTamed()`, `Camel.isTamed()` is true, `teleportTo` doesn't unride, `changeDimension` does.
+- Payload: `playToServer` + `StreamCodec.composite`; `enqueueWork` is redundant on 1.21.1 but matches the other handlers. Protocol versioned `"2"`; `BondView` manual codec order matches.
+- `auto_mount` codec field is optional (old saves load as true); 12 fields is within `RecordCodecBuilder`'s limit.
+- `allowAutoMount` is a SERVER config (synced to clients); entity tags sync too, so the client checkbox matches the server.
+- No client classes referenced from common code; checkbox sits in the empty top strip of the preview pane.
+- Revival heals before the mount check; `releaseFromSnapshot` never mounts.

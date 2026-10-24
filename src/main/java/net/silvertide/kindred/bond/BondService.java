@@ -14,7 +14,9 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.Pose;
 import net.minecraft.world.entity.Saddleable;
+import net.minecraft.world.entity.animal.horse.AbstractHorse;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.portal.DimensionTransition;
@@ -107,7 +109,8 @@ public final class BondService {
                 now,
                 0L,
                 Optional.empty(),
-                false
+                false,
+                true
         );
 
         BondRoster newRoster = roster.with(bond);
@@ -140,7 +143,7 @@ public final class BondService {
         Optional<Entity> existing = BondEntityIndex.get().find(bondId);
         Bond bond = maybeBond.get();
         if (existing.isEmpty() && (bond.dismissed() || bond.diedAt().isPresent())) {
-            SummonResult release = materializeFresh(player, bond, level, saved);
+            SummonResult release = releaseFromSnapshot(player, bond, level, saved);
             if (!release.isSuccess()) {
                 Kindred.LOGGER.warn("[kindred] break of bond {} aborted: could not release the pet ({})",
                         bondId, release);
@@ -254,12 +257,13 @@ public final class BondService {
         if (existing.isPresent()) {
             Entity old = existing.get();
             ResourceKey<Level> oldDim = old.level().dimension();
+            boolean autoMount = shouldAutoMount(player, bond, old);
 
             if (oldDim.equals(playerDim)) {
                 double distSq = old.distanceToSqr(player);
                 double walkRange = Config.WALK_RANGE.get();
 
-                if (distSq <= walkRange * walkRange && old instanceof Mob mob) {
+                if (!autoMount && distSq <= walkRange * walkRange && old instanceof Mob mob) {
                     CompanionAdapters.wake(old);
                     freshenForSummon(mob);
                     mob.getNavigation().moveTo(player.getX(), player.getY(), player.getZ(), Config.WALK_SPEED.get());
@@ -268,26 +272,72 @@ public final class BondService {
                     GlobalSummonCooldownTracker.get().recordSummon(player.getUUID());
                     return SummonResult.WALKING;
                 }
-                return teleportSameDim(player, old, bond, playerLevel, saved);
+                return teleportSameDim(player, old, bond, playerLevel, saved, autoMount);
             }
             if (!Config.CROSS_DIM_ALLOWED.get()) return SummonResult.CROSS_DIM_BLOCKED;
-            return teleportLoaded(player, old, bond, playerLevel, saved, SummonResult.SUMMONED_FRESH);
+            return teleportLoaded(player, old, bond, playerLevel, saved, autoMount);
         }
 
-        return materializeFresh(player, bond, playerLevel, saved);
+        return summonFromSnapshot(player, bond, playerLevel, saved);
     }
 
-    private static SummonResult teleportSameDim(ServerPlayer player, Entity old, Bond bond, ServerLevel level, KindredSavedData saved) {
+    private static boolean shouldAutoMount(ServerPlayer player, Bond bond, Entity pet) {
+        return Config.ALLOW_AUTO_MOUNT.get()
+                && bond.autoMount()
+                && isPlayerReadyToMount(player)
+                && isPetReadyToBeRidden(pet)
+                && hasRoomForMountAndRider(player, pet);
+    }
+
+    private static boolean isPlayerReadyToMount(ServerPlayer player) {
+        return !player.isPassenger()
+                && !player.isShiftKeyDown()
+                && !player.isInWater()
+                && BondSpawnLocator.isPlayerGrounded(player);
+    }
+
+    private static boolean isPetReadyToBeRidden(Entity pet) {
+        if (!Mountability.isMountable(pet) || pet.isVehicle()) return false;
+        if (pet instanceof LivingEntity living && living.isBaby()) return false;
+        if (pet instanceof AbstractHorse horse && !horse.isTamed()) return false;
+        if (pet instanceof Saddleable saddleable && saddleable.isSaddleable()) return saddleable.isSaddled();
+        return true;
+    }
+
+    private static boolean hasRoomForMountAndRider(ServerPlayer player, Entity pet) {
+        return player.level().noCollision(pet.getDimensions(Pose.STANDING)
+                .makeBoundingBox(player.position())
+                .expandTowards(0.0D, player.getDimensions(Pose.STANDING).height(), 0.0D));
+    }
+
+    private static void mountPet(ServerPlayer player, Entity pet) {
+        if (pet instanceof AbstractHorse horse) {
+            horse.setEating(false);
+            horse.setStanding(false);
+        }
+        player.startRiding(pet);
+    }
+
+    private static Optional<Vec3> findSummonPosition(ServerLevel level, ServerPlayer player, EntityType<?> petType, boolean autoMount) {
+        if (autoMount) return Optional.of(player.position());
+        Optional<Vec3> found = BondSpawnLocator.findSpawnLocation(level, player, petType.getDimensions());
+        if (found.isPresent() || Config.REQUIRE_SPACE.get()) return found;
+        return Optional.of(player.position());
+    }
+
+    private static SummonResult teleportSameDim(ServerPlayer player, Entity old, Bond bond, ServerLevel level, KindredSavedData saved, boolean autoMount) {
         UUID bondId = bond.bondId();
 
-        Optional<Vec3> found = BondSpawnLocator.findSpawnLocation(level, player, old.getType().getDimensions());
-        if (found.isEmpty() && Config.REQUIRE_SPACE.get()) return SummonResult.NO_SPACE;
-        Vec3 spawnPos = found.orElse(player.position());
+        Optional<Vec3> found = findSummonPosition(level, player, old.getType(), autoMount);
+        if (found.isEmpty()) return SummonResult.NO_SPACE;
+        Vec3 spawnPos = found.get();
 
         CompanionAdapters.wake(old);
         if (old instanceof LivingEntity oldLiving) freshenForSummon(oldLiving);
+        old.stopRiding();
         old.setYRot(player.getYRot());
         old.teleportTo(spawnPos.x, spawnPos.y, spawnPos.z);
+        if (autoMount) mountPet(player, old);
 
         int newRevision = saved.incrementRevision(bondId);
         old.setData(ModAttachments.BONDED.get(), new Bonded(bondId, player.getUUID(), newRevision));
@@ -307,17 +357,12 @@ public final class BondService {
         return SummonResult.TELEPORTED_NEAR;
     }
 
-    private static SummonResult teleportLoaded(ServerPlayer player, Entity old, Bond bond, ServerLevel targetLevel, KindredSavedData saved, SummonResult successResult) {
+    private static SummonResult teleportLoaded(ServerPlayer player, Entity old, Bond bond, ServerLevel targetLevel, KindredSavedData saved, boolean autoMount) {
         UUID bondId = bond.bondId();
 
-        Vec3 spawnPos;
-        if (Config.REQUIRE_SPACE.get()) {
-            Optional<Vec3> found = BondSpawnLocator.findSpawnLocation(targetLevel, player, old.getType().getDimensions());
-            if (found.isEmpty()) return SummonResult.NO_SPACE;
-            spawnPos = found.get();
-        } else {
-            spawnPos = player.position();
-        }
+        Optional<Vec3> found = findSummonPosition(targetLevel, player, old.getType(), autoMount);
+        if (found.isEmpty()) return SummonResult.NO_SPACE;
+        Vec3 spawnPos = found.get();
 
         CompanionAdapters.wake(old);
 
@@ -345,6 +390,7 @@ public final class BondService {
 
         applyDisplayName(teleported, bond.displayName());
         if (teleported instanceof LivingEntity teleportedLiving) freshenForSummon(teleportedLiving);
+        if (autoMount) mountPet(player, teleported);
 
         int newRevision = saved.incrementRevision(bondId);
         teleported.setData(ModAttachments.BONDED.get(), new Bonded(bondId, player.getUUID(), newRevision));
@@ -366,24 +412,23 @@ public final class BondService {
 
         GlobalSummonCooldownTracker.get().recordSummon(player.getUUID());
 
-        return successResult;
+        return SummonResult.SUMMONED_FRESH;
     }
 
-    private static SummonResult materializeFresh(ServerPlayer player, Bond bond, ServerLevel targetLevel, KindredSavedData saved) {
+    private static SummonResult summonFromSnapshot(ServerPlayer player, Bond bond, ServerLevel targetLevel, KindredSavedData saved) {
+        return materializeFromSnapshot(player, bond, targetLevel, saved, true);
+    }
+
+    private static SummonResult releaseFromSnapshot(ServerPlayer player, Bond bond, ServerLevel targetLevel, KindredSavedData saved) {
+        return materializeFromSnapshot(player, bond, targetLevel, saved, false);
+    }
+
+    private static SummonResult materializeFromSnapshot(ServerPlayer player, Bond bond, ServerLevel targetLevel, KindredSavedData saved, boolean mountIfEligible) {
         EntityType<?> type = BuiltInRegistries.ENTITY_TYPE.get(bond.entityType());
         if (type == null) {
             Kindred.LOGGER.warn("[kindred] SPAWN_FAILED: entity type {} not in registry (bond {} for {})",
                     bond.entityType(), bond.bondId(), player.getGameProfile().getName());
             return SummonResult.SPAWN_FAILED;
-        }
-
-        Vec3 spawnPos;
-        if (Config.REQUIRE_SPACE.get()) {
-            Optional<Vec3> found = BondSpawnLocator.findSpawnLocation(targetLevel, player, type.getDimensions());
-            if (found.isEmpty()) return SummonResult.NO_SPACE;
-            spawnPos = found.get();
-        } else {
-            spawnPos = player.position();
         }
 
         Entity entity = type.create(targetLevel);
@@ -407,6 +452,11 @@ public final class BondService {
 
         CompanionAdapters.wake(entity);
 
+        boolean autoMount = mountIfEligible && shouldAutoMount(player, bond, entity);
+        Optional<Vec3> found = findSummonPosition(targetLevel, player, type, autoMount);
+        if (found.isEmpty()) return SummonResult.NO_SPACE;
+        Vec3 spawnPos = found.get();
+
         entity.setPos(spawnPos.x, spawnPos.y, spawnPos.z);
 
         int newRevision = saved.incrementRevision(bond.bondId());
@@ -418,6 +468,7 @@ public final class BondService {
                     bond.bondId(), player.getGameProfile().getName());
             return SummonResult.SPAWN_FAILED;
         }
+        if (autoMount) mountPet(player, entity);
 
         playSummonFx(targetLevel, spawnPos.x, spawnPos.y, spawnPos.z, true);
 

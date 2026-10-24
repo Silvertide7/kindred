@@ -23,6 +23,7 @@ public record BondView(
         boolean loaded,
         long cooldownRemainingMs,
         long revivalRemainingMs,
+        boolean autoMount,
         CompoundTag nbtSnapshot
 ) {
     public static final StreamCodec<ByteBuf, Vec3> VEC3_STREAM_CODEC = StreamCodec.composite(
@@ -32,7 +33,6 @@ public record BondView(
             Vec3::new
     );
 
-    // Manual stream codec (11 fields exceeds composite's arity).
     public static final StreamCodec<ByteBuf, BondView> STREAM_CODEC = new StreamCodec<>() {
         @Override
         public BondView decode(ByteBuf buf) {
@@ -46,8 +46,9 @@ public record BondView(
             boolean loaded = ByteBufCodecs.BOOL.decode(buf);
             long cooldownRemainingMs = ByteBufCodecs.VAR_LONG.decode(buf);
             long revivalRemainingMs = ByteBufCodecs.VAR_LONG.decode(buf);
+            boolean autoMount = ByteBufCodecs.BOOL.decode(buf);
             CompoundTag nbtSnapshot = ByteBufCodecs.TRUSTED_COMPOUND_TAG.decode(buf);
-            return new BondView(bondId, entityUUID, entityType, displayName, lastSeenDim, lastSeenPos, isActive, loaded, cooldownRemainingMs, revivalRemainingMs, nbtSnapshot);
+            return new BondView(bondId, entityUUID, entityType, displayName, lastSeenDim, lastSeenPos, isActive, loaded, cooldownRemainingMs, revivalRemainingMs, autoMount, nbtSnapshot);
         }
 
         @Override
@@ -62,6 +63,7 @@ public record BondView(
             ByteBufCodecs.BOOL.encode(buf, v.loaded());
             ByteBufCodecs.VAR_LONG.encode(buf, v.cooldownRemainingMs());
             ByteBufCodecs.VAR_LONG.encode(buf, v.revivalRemainingMs());
+            ByteBufCodecs.BOOL.encode(buf, v.autoMount());
             ByteBufCodecs.TRUSTED_COMPOUND_TAG.encode(buf, v.nbtSnapshot());
         }
     };
@@ -89,6 +91,7 @@ public record BondView(
                 loaded,
                 cooldownRemainingMs,
                 revivalRemainingMs,
+                bond.autoMount(),
                 nbtSnapshot
         );
     }

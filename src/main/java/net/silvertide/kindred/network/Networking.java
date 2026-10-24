@@ -14,6 +14,7 @@ import net.silvertide.kindred.network.packet.C2SRenameBond;
 import net.silvertide.kindred.network.packet.C2SReorderBond;
 import net.silvertide.kindred.network.packet.C2SRequestHold;
 import net.silvertide.kindred.network.packet.C2SSetActivePet;
+import net.silvertide.kindred.network.packet.C2SSetAutoMount;
 import net.silvertide.kindred.network.packet.S2CBindCandidateResult;
 import net.silvertide.kindred.network.packet.S2CHoldStart;
 import net.silvertide.kindred.network.packet.S2CHoldStop;
@@ -24,7 +25,7 @@ public final class Networking {
 
     @SubscribeEvent
     public static void onRegister(RegisterPayloadHandlersEvent event) {
-        PayloadRegistrar registrar = event.registrar(Kindred.MODID).versioned("1");
+        PayloadRegistrar registrar = event.registrar(Kindred.MODID).versioned("2");
 
         registrar.playToServer(C2SOpenRoster.TYPE, C2SOpenRoster.STREAM_CODEC, ServerPacketHandler::onOpenRoster);
         registrar.playToServer(C2SRequestHold.TYPE, C2SRequestHold.STREAM_CODEC, ServerPacketHandler::onRequestHold);
@@ -34,6 +35,7 @@ public final class Networking {
         registrar.playToServer(C2SRenameBond.TYPE, C2SRenameBond.STREAM_CODEC, ServerPacketHandler::onRenameBond);
         registrar.playToServer(C2SReorderBond.TYPE, C2SReorderBond.STREAM_CODEC, ServerPacketHandler::onReorderBond);
         registrar.playToServer(C2SCheckBindCandidate.TYPE, C2SCheckBindCandidate.STREAM_CODEC, ServerPacketHandler::onCheckBindCandidate);
+        registrar.playToServer(C2SSetAutoMount.TYPE, C2SSetAutoMount.STREAM_CODEC, ServerPacketHandler::onSetAutoMount);
 
         registrar.playToClient(S2CRosterSync.TYPE, S2CRosterSync.STREAM_CODEC, ClientPacketHandler::onRosterSync);
         registrar.playToClient(S2CHoldStart.TYPE, S2CHoldStart.STREAM_CODEC, ClientPacketHandler::onHoldStart);

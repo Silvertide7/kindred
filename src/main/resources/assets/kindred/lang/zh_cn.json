@@ -27,6 +27,7 @@
   "kindred.screen.set_active": "未收藏",
   "kindred.screen.is_active": "已收藏",
   "kindred.screen.rename": "重命名",
+  "kindred.screen.auto_mount": "自动骑乘",
   "kindred.screen.move_up": "▲",
   "kindred.screen.move_down": "▼",
   "kindred.dim.minecraft.overworld": "主世界",

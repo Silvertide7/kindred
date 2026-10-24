@@ -6,12 +6,14 @@ import net.minecraft.client.gui.screens.inventory.InventoryScreen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.LivingEntity;
 import net.neoforged.neoforge.network.PacketDistributor;
+import net.silvertide.kindred.bond.Mountability;
 import net.silvertide.kindred.client.data.ClientRosterData;
 import net.silvertide.kindred.client.data.PreviewEntityCache;
 import net.silvertide.kindred.config.Config;
 import net.silvertide.kindred.network.BondView;
 import net.silvertide.kindred.network.packet.C2SReorderBond;
 import net.silvertide.kindred.network.packet.C2SSetActivePet;
+import net.silvertide.kindred.network.packet.C2SSetAutoMount;
 
 import java.util.List;
 import java.util.Optional;
@@ -19,10 +21,12 @@ import java.util.UUID;
 
 import net.silvertide.kindred.client.screen.ScreenDrawUtil.ButtonState;
 
+import static net.silvertide.kindred.client.screen.ScreenDrawUtil.drawBorder;
 import static net.silvertide.kindred.client.screen.ScreenDrawUtil.drawButton;
 import static net.silvertide.kindred.client.screen.ScreenDrawUtil.drawCenteredText;
 import static net.silvertide.kindred.client.screen.ScreenDrawUtil.inBox;
 import static net.silvertide.kindred.client.screen.ScreenDrawUtil.panelMutedTextColor;
+import static net.silvertide.kindred.client.screen.ScreenDrawUtil.panelTextColor;
 
 public final class PreviewPane {
     private static final int PREVIEW_W = 100;
@@ -37,11 +41,18 @@ public final class PreviewPane {
     private static final int MAX_ENTITY_SCALE = 60;
     private static final int MOUSE_Y_PITCH_CLAMP_BAND = 8;
     private static final float ENTITY_RENDER_FORWARD_OFFSET = 0.0625F;
+    private static final int PANE_INNER_PADDING = 4;
+    private static final int CHECKBOX_SIZE = 9;
+    private static final int CHECKBOX_TOP_OFFSET = 3;
+    private static final int CHECKBOX_LABEL_GAP = 3;
+    private static final int CHECKBOX_CHECK_INSET = 2;
+    private static final int CHECKBOX_LABEL_TOP_OFFSET = 1;
 
     private static final int C_BTN_CLAIM = 0xFF3D5C8A;
     private static final int C_BTN_CLAIM_HOVER = 0xFF5278B0;
     private static final int C_BTN_DISABLED_EDGE = 0xFF2A2620;
     private static final int C_STAR_ACTIVE = 0xFFE7B43B;
+    private static final int C_CHECKBOX_ACCENT = 0xFF5278B0;
 
     private final RenameEditor renameEditor;
 
@@ -88,14 +99,17 @@ public final class PreviewPane {
 
         renderEntityOrPlaceholder(graphics, font, selected, mouseX, mouseY);
         renderPaneButtons(graphics, font, selected, mouseX, mouseY);
+        if (showsAutoMountCheckbox(selected)) {
+            renderAutoMountCheckbox(graphics, font, selected, mouseX, mouseY);
+        }
     }
 
     public boolean tryHandleClick(int mouseX, int mouseY) {
         BondView selected = currentSelection();
         if (selected == null) return false;
 
-        int buttonsX = previewX + 4;
-        int buttonsW = PREVIEW_W - 8;
+        int buttonsX = paneInnerX();
+        int buttonsW = paneInnerWidth();
         int moveHalfW = (buttonsW - ACTION_BTN_GAP) / 2;
         int moveDownX = buttonsX + moveHalfW + ACTION_BTN_GAP;
         int moveDownW = buttonsW - moveHalfW - ACTION_BTN_GAP;
@@ -104,6 +118,11 @@ public final class PreviewPane {
         int renameY = renameButtonY();
         int setActiveY = setActiveButtonY();
 
+        if (showsAutoMountCheckbox(selected) && isOverAutoMountCheckbox(mouseX, mouseY)) {
+            renameEditor.commitEditing();
+            PacketDistributor.sendToServer(new C2SSetAutoMount(selected.bondId(), !selected.autoMount()));
+            return true;
+        }
         if (inBox(mouseX, mouseY, buttonsX, moveY, moveHalfW, ACTION_BTN_H)) {
             if (selectedBondIndex(selected) > 0) {
                 renameEditor.commitEditing();
@@ -181,8 +200,8 @@ public final class PreviewPane {
     private void renderPaneButtons(GuiGraphics graphics, Font font, BondView selected,
                                    int mouseX, int mouseY) {
         boolean allowRename = Config.ALLOW_RENAME.get();
-        int buttonsX = previewX + 4;
-        int buttonsW = PREVIEW_W - 8;
+        int buttonsX = paneInnerX();
+        int buttonsW = paneInnerWidth();
         int setActiveY = setActiveButtonY();
         int renameY = renameButtonY();
         int moveY = moveButtonY();
@@ -254,6 +273,41 @@ public final class PreviewPane {
                 isAlreadyActive
                         ? ButtonState.of(true, false).withAccent(C_STAR_ACTIVE)
                         : ButtonState.of(true, setActiveHover));
+    }
+
+    private boolean showsAutoMountCheckbox(BondView selected) {
+        return Config.ALLOW_AUTO_MOUNT.get() && Mountability.isMountable(PreviewEntityCache.getOrBuild(selected));
+    }
+
+    private void renderAutoMountCheckbox(GuiGraphics graphics, Font font, BondView selected,
+                                         int mouseX, int mouseY) {
+        int boxX = paneInnerX();
+        int boxY = autoMountCheckboxY();
+        int edgeColor = isOverAutoMountCheckbox(mouseX, mouseY) ? C_CHECKBOX_ACCENT : panelMutedTextColor();
+        drawBorder(graphics, boxX, boxY, CHECKBOX_SIZE, CHECKBOX_SIZE, edgeColor);
+        if (selected.autoMount()) {
+            graphics.fill(boxX + CHECKBOX_CHECK_INSET, boxY + CHECKBOX_CHECK_INSET,
+                    boxX + CHECKBOX_SIZE - CHECKBOX_CHECK_INSET, boxY + CHECKBOX_SIZE - CHECKBOX_CHECK_INSET,
+                    C_CHECKBOX_ACCENT);
+        }
+        graphics.drawString(font, Component.translatable("kindred.screen.auto_mount"),
+                boxX + CHECKBOX_SIZE + CHECKBOX_LABEL_GAP, boxY + CHECKBOX_LABEL_TOP_OFFSET, panelTextColor(), false);
+    }
+
+    private boolean isOverAutoMountCheckbox(int mouseX, int mouseY) {
+        return inBox(mouseX, mouseY, paneInnerX(), autoMountCheckboxY(), paneInnerWidth(), CHECKBOX_SIZE);
+    }
+
+    private int paneInnerX() {
+        return previewX + PANE_INNER_PADDING;
+    }
+
+    private int paneInnerWidth() {
+        return PREVIEW_W - 2 * PANE_INNER_PADDING;
+    }
+
+    private int autoMountCheckboxY() {
+        return rowsTop + CHECKBOX_TOP_OFFSET;
     }
 
     private int paneBottom() {

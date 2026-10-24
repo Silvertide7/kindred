@@ -27,6 +27,7 @@
   "kindred.screen.set_active": "Set Active",
   "kindred.screen.is_active": "Active",
   "kindred.screen.rename": "Rename",
+  "kindred.screen.auto_mount": "Auto-Mount",
   "kindred.screen.move_up": "▲",
   "kindred.screen.move_down": "▼",
   "kindred.dim.minecraft.overworld": "Overworld",

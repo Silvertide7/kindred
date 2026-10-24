@@ -75,6 +75,14 @@ public final class Config {
                      "summoned this way will start drowning.")
             .define("allowWaterSummon", true);
 
+    public static final ForgeConfigSpec.BooleanValue ALLOW_AUTO_MOUNT = BUILDER
+            .comment("",
+                     "If true (default), summoned rideable pets with Auto-Mount checked appear under the player " +
+                     "and are mounted. Pets that take a saddle must be wearing one. Sneaking when a keybind " +
+                     "summon completes skips mounting. Exclude entity types with the kindred:auto_mount_denylist " +
+                     "tag. If false, the checkbox is hidden.")
+            .define("allowAutoMount", true);
+
     static { BUILDER.pop(); }
 
     static { BUILDER.push("cooldowns"); }

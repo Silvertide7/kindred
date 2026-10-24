@@ -20,6 +20,7 @@ import net.silvertide.kindred.network.packet.C2SRenameBond;
 import net.silvertide.kindred.network.packet.C2SReorderBond;
 import net.silvertide.kindred.network.packet.C2SRequestHold;
 import net.silvertide.kindred.network.packet.C2SSetActivePet;
+import net.silvertide.kindred.network.packet.C2SSetAutoMount;
 import net.silvertide.kindred.network.packet.S2CBindCandidateResult;
 import net.silvertide.kindred.network.packet.S2CRosterSync;
 import net.silvertide.kindred.attachment.KindredData;
@@ -182,6 +183,18 @@ public final class ServerPacketHandler {
         if (updated != roster) {
             KindredData.setRoster(player, updated);
         }
+        sendRosterSync(player);
+    }
+
+    public static void onSetAutoMount(C2SSetAutoMount payload, Supplier<NetworkEvent.Context> context) {
+        ServerPlayer player = context.get().getSender();
+        if (player == null) return;
+        if (isRosterPacketRateLimited(player, payload)) return;
+        if (!Config.ALLOW_AUTO_MOUNT.get()) return;
+        BondRoster roster = KindredData.getRoster(player);
+        Optional<Bond> bond = roster.get(payload.bondId());
+        if (bond.isEmpty()) return;
+        KindredData.setRoster(player, roster.with(bond.get().withAutoMount(payload.autoMount())));
         sendRosterSync(player);
     }
 

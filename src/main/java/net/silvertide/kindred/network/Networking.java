@@ -18,13 +18,14 @@ import net.silvertide.kindred.network.packet.C2SRenameBond;
 import net.silvertide.kindred.network.packet.C2SReorderBond;
 import net.silvertide.kindred.network.packet.C2SRequestHold;
 import net.silvertide.kindred.network.packet.C2SSetActivePet;
+import net.silvertide.kindred.network.packet.C2SSetAutoMount;
 import net.silvertide.kindred.network.packet.S2CBindCandidateResult;
 import net.silvertide.kindred.network.packet.S2CHoldStart;
 import net.silvertide.kindred.network.packet.S2CHoldStop;
 import net.silvertide.kindred.network.packet.S2CRosterSync;
 
 public final class Networking {
-    private static final String PROTOCOL_VERSION = "1";
+    private static final String PROTOCOL_VERSION = "2";
 
     private static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
             new ResourceLocation(Kindred.MODID, "main"),
@@ -59,6 +60,9 @@ public final class Networking {
         CHANNEL.messageBuilder(C2SCheckBindCandidate.class, id++, NetworkDirection.PLAY_TO_SERVER)
                 .encoder(C2SCheckBindCandidate::encode).decoder(C2SCheckBindCandidate::decode)
                 .consumerMainThread(ServerPacketHandler::onCheckBindCandidate).add();
+        CHANNEL.messageBuilder(C2SSetAutoMount.class, id++, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(C2SSetAutoMount::encode).decoder(C2SSetAutoMount::decode)
+                .consumerMainThread(ServerPacketHandler::onSetAutoMount).add();
 
         CHANNEL.messageBuilder(S2CRosterSync.class, id++, NetworkDirection.PLAY_TO_CLIENT)
                 .encoder(S2CRosterSync::encode).decoder(S2CRosterSync::decode)

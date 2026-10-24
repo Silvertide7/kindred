@@ -21,6 +21,11 @@ public final class ModTags {
             new ResourceLocation(Kindred.MODID, "bond_denylist")
     );
 
+    public static final TagKey<EntityType<?>> AUTO_MOUNT_DENYLIST = TagKey.create(
+            Registries.ENTITY_TYPE,
+            new ResourceLocation(Kindred.MODID, "auto_mount_denylist")
+    );
+
     public static final TagKey<DimensionType> NO_SUMMON_DIMENSIONS = TagKey.create(
             Registries.DIMENSION_TYPE,
             new ResourceLocation(Kindred.MODID, "no_summon_dimensions")

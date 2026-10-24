@@ -202,3 +202,48 @@ Ported from main commit `666e495`, where these were reviewed by an independent r
 - [x] `mod_version` 1.2.0 -> 1.3.0; `CHANGELOG.md` rewritten for 1.3.0.
 - [ ] Accepted: V on a pet during its death animation dismisses the corpse (pet is still loaded). Harmless: death snapshot already recorded, next summon revives it; refused anyway when a revival cooldown is set.
 - [ ] In-game check: permanent death, summon while dying, Petting-sat wolf summoned, waiting Petting pet summoned, nametag toggle both ways.
+
+# Auto-mount audit
+
+Feature: summoned rideable pets spawn under the player and mount them. Per-bond `autoMount` flag (default on), `autoMountEnabled` + `mountableInterface` server config, `kindred:auto_mount_denylist` tag, preview-pane checkbox via `C2SSetAutoMount`. `./gradlew compileJava` passes. Not tested in-game. Sources: self-audit (S) and an independent reviewer (R).
+
+## Medium
+- [x] 1. (S) No headroom check for the rider: a player summoning in a 2-high tunnel would be mounted with their head in the ceiling. `hasRoomForMountAndRider` now checks the mount's box plus a standing player's height.
+- [x] 2. (S) `startRiding(entity)` fails during the 60-tick boarding cooldown after a dismount, leaving the pet inside the player. Now `startRiding(entity, true)`; shift and passenger checks are done in `shouldAutoMount` instead.
+- [x] 3. (R) Untamed `AbstractHorse` (e.g. bonded through Petting) passed the saddle check because vanilla `isSaddleable()` requires `isTamed()`; the horse would buck the rider off. `shouldAutoMount` now rejects untamed horses.
+- [x] 4. (R) A pet sitting in a boat or minecart was teleported but stayed a passenger, so the vehicle snapped it (and the newly mounted player) back. `teleportSameDim` now calls `old.stopRiding()` first; this also fixes the same pre-existing snap-back for normal summons.
+
+## Low
+- [x] 5. (S) A pet already carrying a passenger can't be mounted; `shouldAutoMount` now requires `!entity.isVehicle()`.
+- [x] 6. (R) With `requireSpace=false`, an elytra or creative-flying player would pull the pet into mid-air. `shouldAutoMount` now requires `BondSpawnLocator.isPlayerGrounded`.
+- [x] 7. (R) Headroom used pose-dependent sizes (sitting camel, crawling player). Now uses `getType().getDimensions()` and `Pose.STANDING`.
+- [x] 8. (R) Sneak-to-skip only works for keybind summons; opening the roster screen releases sneak. Config text corrected.
+- [x] 9. (R) `PLAYER_RIDEABLE` config text said "horse-like only" but llamas qualify. Text corrected.
+- [x] 10. (R) Accepted as-is: if another mod cancels the mount, the pet shouldn't be mounted. `startRiding` can still return false if another mod cancels `EntityMountEvent` (e.g. claim protection). The pet is then left at the player's position and the summon reports success. Options: fall back to `BondSpawnLocator` on failure, or accept the overlap.
+- [x] 11. (R) Llamas auto-mounted by default and can't be steered. `minecraft:llama` and `minecraft:trader_llama` now ship in `auto_mount_denylist`.
+
+## Checked and fine
+- Server config and entity tags are synced to the client, so `isMountable` and the checkbox agree with the server; `isMountable(null)` is safe.
+- `auto_mount` codec field is optional (old saves load; old builds ignore it). `BondView` encode/decode order matches; protocol bumped to `"2"`.
+- `C2SSetAutoMount` is rate-limited, config-gated, rejects unknown bonds, and sends an absolute value.
+- Checkbox hover/click share one rectangle above the entity render area.
+- `materializeFresh` heals revived pets before the saddle check; `breakBond` never auto-mounts.
+- Cross-dimension: `changeDimension` already unrides; the player mounts the returned entity.
+- Camels override `isTamed()` to true, so finding 3 doesn't affect them.
+
+# Auto-mount code-quality audit
+
+Pass for simplicity, naming and smells. `./gradlew compileJava` passes. Not tested in-game. Sources: self-audit (S) and an independent reviewer (R).
+
+- [x] 1. (S) Spawn-position branching repeated in `teleportSameDim`, `teleportLoaded` and `materializeFresh`. Extracted `findSummonPosition`. Side effect: with `requireSpace=false`, cross-dim and snapshot summons now also try the spawn locator before falling back to the player's position, like same-dim teleports already did.
+- [x] 2. (S) `shouldAutoMount` was one 11-condition chain. Split into `isPlayerReadyToMount`, `isPetReadyToBeRidden` and `hasRoomForMountAndRider`.
+- [x] 3. (S) `teleportLoaded` took a `successResult` parameter that was always `SUMMONED_FRESH`. Removed.
+- [x] 4. (S) Checkbox hit-box computed two ways (click used `buttonsX`, hover used `previewX + 4`). One `isOverAutoMountCheckbox` now serves both.
+- [x] 5. (R) Boolean flag `materializeFresh(..., true/false)`. Replaced by `summonFromSnapshot` and `releaseFromSnapshot` over a private `materializeFromSnapshot`.
+- [x] 6. (R) Triple-negation saddle check. Rewritten as `if (saddleable && isSaddleable()) return isSaddled(); return true;`.
+- [x] 7. (R) Config key didn't match its section's `allowX` naming. Renamed `autoMountEnabled` to `allowAutoMount` (`ALLOW_AUTO_MOUNT`); description no longer says "default" twice. Not yet released, so no migration needed.
+- [x] 8. (R) `previewX + 4` / `PREVIEW_W - 8` repeated three times. Added `PANE_INNER_PADDING` with `paneInnerX()` / `paneInnerWidth()`, also used by the existing buttons. Label nudge is now `CHECKBOX_LABEL_TOP_OFFSET`.
+- [x] 9. (R) Checkbox reused the claim button's hover colour. Own `C_CHECKBOX_ACCENT` constant.
+- [x] 10. (R) Client UI called `BondService.isMountable`. Moved the predicate to `bond/Mountability`.
+- [x] 11. (R) `mountableInterface` config was redundant with the `auto_mount_denylist` tag. Removed; mountable is now `PlayerRideable` or `Saddleable`, minus the tag.
+- [ ] 12. (R) `tryClaim` builds `Bond` with trailing positional booleans (`false, true`). Existing pattern; consider a `Bond.newlyClaimed(...)` factory if another field is added.

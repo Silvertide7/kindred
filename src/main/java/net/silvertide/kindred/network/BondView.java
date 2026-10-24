@@ -20,6 +20,7 @@ public record BondView(
         boolean loaded,
         long cooldownRemainingMs,
         long revivalRemainingMs,
+        boolean autoMount,
         CompoundTag nbtSnapshot
 ) {
     public void encode(FriendlyByteBuf buf) {
@@ -35,6 +36,7 @@ public record BondView(
         buf.writeBoolean(loaded);
         buf.writeVarLong(cooldownRemainingMs);
         buf.writeVarLong(revivalRemainingMs);
+        buf.writeBoolean(autoMount);
         buf.writeNbt(nbtSnapshot);
     }
 
@@ -50,6 +52,7 @@ public record BondView(
                 buf.readBoolean(),
                 buf.readVarLong(),
                 buf.readVarLong(),
+                buf.readBoolean(),
                 buf.readAnySizeNbt());
     }
 
@@ -76,6 +79,7 @@ public record BondView(
                 loaded,
                 cooldownRemainingMs,
                 revivalRemainingMs,
+                bond.autoMount(),
                 nbtSnapshot
         );
     }

@@ -22,6 +22,6 @@ public final class FamiliarsLibCompat implements CompanionAdapter {
 
     @Override
     public void wake(Entity entity) {
-        ((AbstractSpellCastingPet) entity).setSitting(false);
+        if (entity instanceof AbstractSpellCastingPet familiar) familiar.setSitting(false);
     }
 }

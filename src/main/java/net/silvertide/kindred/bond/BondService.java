@@ -48,9 +48,8 @@ public final class BondService {
     }
 
     public static ClaimResult checkClaimEligibility(ServerPlayer player, Entity target) {
-        Optional<CompanionAdapter> adapter = CompanionAdapters.adapterFor(target);
-        if (adapter.isEmpty()) return ClaimResult.NOT_OWNABLE;
-        if (!adapter.get().ownerOf(target).map(player.getUUID()::equals).orElse(false)) return ClaimResult.NOT_OWNED_BY_PLAYER;
+        if (!CompanionAdapters.isOwnable(target)) return ClaimResult.NOT_OWNABLE;
+        if (!CompanionAdapters.ownerOf(target).map(player.getUUID()::equals).orElse(false)) return ClaimResult.NOT_OWNED_BY_PLAYER;
 
         var entityTypeTags = ForgeRegistries.ENTITY_TYPES.tags();
         boolean allowlistActive = !entityTypeTags.getTag(ModTags.BOND_ALLOWLIST).isEmpty();
@@ -117,6 +116,7 @@ public final class BondService {
         }
         KindredData.setRoster(player, newRoster);
         KindredData.setBonded(target, new Bonded(bondId, player.getUUID(), revision));
+        applyNameVisibility(target);
         BondEntityIndex.get().track(bondId, target);
 
         int xpCost = Config.BOND_XP_LEVEL_COST.get();
@@ -156,6 +156,7 @@ public final class BondService {
             Entity entity = existing.get();
             KindredData.removeBonded(entity);
             BondEntityIndex.get().untrack(bondId);
+            entity.setCustomNameVisible(false);
             saved.clearBond(bondId);
         } else {
             saved.markPendingDisband(bondId);
@@ -244,6 +245,7 @@ public final class BondService {
         }
 
         Optional<Entity> existing = BondEntityIndex.get().find(bondId);
+        if (existing.isPresent() && isDying(existing.get())) return SummonResult.REVIVAL_PENDING;
         if (existing.isPresent()) {
             Entity old = existing.get();
             ResourceKey<Level> oldDim = old.level().dimension();
@@ -434,14 +436,22 @@ public final class BondService {
         return SummonResult.SUMMONED_FRESH;
     }
 
+    public static void applyNameVisibility(Entity entity) {
+        if (entity.hasCustomName()) entity.setCustomNameVisible(Config.ALWAYS_SHOW_PET_NAMES.get());
+    }
+
     public static void applyDisplayName(Entity entity, Optional<String> displayName) {
         if (displayName.isPresent()) {
             entity.setCustomName(Component.literal(displayName.get()));
-            entity.setCustomNameVisible(true);
+            entity.setCustomNameVisible(Config.ALWAYS_SHOW_PET_NAMES.get());
         } else {
             entity.setCustomName(null);
             entity.setCustomNameVisible(false);
         }
+    }
+
+    private static boolean isDying(Entity entity) {
+        return entity instanceof LivingEntity living && living.isDeadOrDying();
     }
 
     private static void freshenForSummon(LivingEntity living) {

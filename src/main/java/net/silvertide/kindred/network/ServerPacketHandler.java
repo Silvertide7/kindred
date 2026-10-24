@@ -41,7 +41,7 @@ public final class ServerPacketHandler {
     public static void onOpenRoster(C2SOpenRoster payload, Supplier<NetworkEvent.Context> context) {
         ServerPlayer player = context.get().getSender();
         if (player == null) return;
-        if (isRosterPacketRateLimited(player)) return;
+        if (isRosterPacketRateLimited(player, payload)) return;
         sendRosterSync(player);
     }
 
@@ -117,25 +117,27 @@ public final class ServerPacketHandler {
     private static final int MAX_NAME_LEN = 32;
     private static final int MIN_TICKS_BETWEEN_ROSTER_PACKETS = 2;
 
-    private static final Map<UUID, Integer> lastRosterPacketTickByPlayer = new ConcurrentHashMap<>();
+    private record RosterPacketRateKey(UUID playerId, Class<?> packetType) {}
 
-    private static boolean isRosterPacketRateLimited(ServerPlayer player) {
+    private static final Map<RosterPacketRateKey, Integer> lastRosterPacketTick = new ConcurrentHashMap<>();
+
+    private static boolean isRosterPacketRateLimited(ServerPlayer player, Object payload) {
         int nowTick = player.server.getTickCount();
-        Integer lastTick = lastRosterPacketTickByPlayer.put(player.getUUID(), nowTick);
+        Integer lastTick = lastRosterPacketTick.put(new RosterPacketRateKey(player.getUUID(), payload.getClass()), nowTick);
         return lastTick != null && nowTick - lastTick < MIN_TICKS_BETWEEN_ROSTER_PACKETS;
     }
 
     public static void forgetRosterPacketRate(ServerPlayer player) {
-        lastRosterPacketTickByPlayer.remove(player.getUUID());
+        lastRosterPacketTick.keySet().removeIf(key -> key.playerId().equals(player.getUUID()));
     }
 
     private static final List<String> PREVIEW_EXCLUDED_NBT_KEYS =
-            List.of("Items", "Brain", "ForgeData", "ForgeCaps", "Motion", "Passengers", "Leash");
+            List.of("Items", "Brain", "Motion", "Passengers", "Leash");
 
     public static void onRenameBond(C2SRenameBond payload, Supplier<NetworkEvent.Context> context) {
         ServerPlayer player = context.get().getSender();
         if (player == null) return;
-        if (isRosterPacketRateLimited(player)) return;
+        if (isRosterPacketRateLimited(player, payload)) return;
         if (!Config.ALLOW_RENAME.get()) return;
         BondRoster roster = KindredData.getRoster(player);
         Optional<Bond> bond = roster.get(payload.bondId());
@@ -162,7 +164,7 @@ public final class ServerPacketHandler {
     public static void onReorderBond(C2SReorderBond payload, Supplier<NetworkEvent.Context> context) {
         ServerPlayer player = context.get().getSender();
         if (player == null) return;
-        if (isRosterPacketRateLimited(player)) return;
+        if (isRosterPacketRateLimited(player, payload)) return;
         BondRoster roster = KindredData.getRoster(player);
         BondRoster updated = roster.withMoved(payload.bondId(), payload.delta());
         if (updated != roster) {
@@ -174,7 +176,7 @@ public final class ServerPacketHandler {
     public static void onSetActivePet(C2SSetActivePet payload, Supplier<NetworkEvent.Context> context) {
         ServerPlayer player = context.get().getSender();
         if (player == null) return;
-        if (isRosterPacketRateLimited(player)) return;
+        if (isRosterPacketRateLimited(player, payload)) return;
         BondRoster roster = KindredData.getRoster(player);
         BondRoster updated = roster.withActive(payload.bondId());
         if (updated != roster) {

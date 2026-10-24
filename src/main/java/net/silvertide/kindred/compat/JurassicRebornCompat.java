@@ -22,7 +22,7 @@ public final class JurassicRebornCompat implements CompanionAdapter {
 
     @Override
     public void wake(Entity entity) {
-        DinosaurEntity dinosaur = (DinosaurEntity) entity;
+        if (!(entity instanceof DinosaurEntity dinosaur)) return;
         dinosaur.disturbSleep();
         dinosaur.setFieldOrder(DinosaurEntity.Order.FOLLOW);
     }

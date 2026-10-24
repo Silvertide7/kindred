@@ -37,6 +37,12 @@ public final class Config {
                      "If false, the Rename button is hidden and rename packets are rejected server-side.")
             .define("allowRename", true);
 
+    public static final ForgeConfigSpec.BooleanValue ALWAYS_SHOW_PET_NAMES = BUILDER
+            .comment("",
+                     "If true, named bonded pets show their nametag at all times. " +
+                     "If false (default), the nametag only shows while a player looks at the pet, like vanilla name tags.")
+            .define("alwaysShowPetNames", false);
+
     static { BUILDER.pop(); }
 
     static { BUILDER.push("summoning"); }

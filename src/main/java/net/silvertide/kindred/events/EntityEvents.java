@@ -42,6 +42,7 @@ public final class EntityEvents {
         Optional<Bonded> maybeBonded = KindredData.getBonded(entity);
         if (maybeBonded.isEmpty()) {
             KindredData.removeBonded(entity);
+            entity.setCustomNameVisible(false);
             Kindred.LOGGER.warn("[kindred] removed undecodable bond data from {}", entity.getType());
             return;
         }
@@ -51,6 +52,7 @@ public final class EntityEvents {
         int worldRevision = saved.getRevision(bonded.bondId());
         if (worldRevision == 0) {
             KindredData.removeBonded(entity);
+            entity.setCustomNameVisible(false);
             saved.clearBond(bonded.bondId());
             Kindred.LOGGER.info("[kindred] released orphaned copy of former bond {} (no revision on record)",
                     bonded.bondId());
@@ -66,12 +68,14 @@ public final class EntityEvents {
 
         if (saved.isPendingDisband(bonded.bondId())) {
             KindredData.removeBonded(entity);
+            entity.setCustomNameVisible(false);
             saved.clearPendingDisband(bonded.bondId());
             saved.clearBond(bonded.bondId());
             return;
         }
 
         BondEntityIndex.get().track(bonded.bondId(), entity);
+        BondService.applyNameVisibility(entity);
     }
 
     @SubscribeEvent

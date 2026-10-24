@@ -179,3 +179,26 @@ Self-audit only. The independent reviewer pass (`/code-review`) has not been run
 - [x] `mod_version` 1.1.1 -> 1.2.0, `CHANGELOG.md` rewritten for 1.2.0 (compat, vanilla UI, shadow removal, audit fixes).
 - [ ] Visual check of the vanilla roster screen in a client (V7 radial sweep still unchecked).
 - [ ] IDE Problems-tab export into `claude_reference/problems` (needs the user).
+
+# Port from main (1.3.0)
+
+Ported from main commit `666e495`, where these were reviewed by an independent reviewer. 1.20.1 1.2.0 was released as `20.1.2.0` (compat only), so this branch is now 1.3.0 to match main.
+
+## Review fixes from main
+- [x] R1. Dying filter removed from `BondEntityIndex.find`; it hid the entity from the permanent-death `breakBond` (bond never stripped, drops cancelled, `pendingDisbands` leaked).
+- [x] R2. Summon returns `REVIVAL_PENDING` while the pet is dying instead of rebuilding a duplicate.
+- [x] R3. Roster packet rate limit is per player per packet type, so Move Up/Down and Set Active after a pending rename are no longer dropped.
+- [x] R4. Preview NBT no longer strips `ForgeData`/`ForgeCaps`, so compat mob variants render correctly.
+
+## Summon wake and claim
+- [x] `CompanionAdapters.wake` clears the sneak flag and runs every adapter's wake; each adapter guards its own type. Petting 1.20.1 uses the same `sitstill`/`waiting`/`freewander` keys and `setShiftKeyDown`, all cleared on summon.
+- [x] Claim uses `CompanionAdapters.ownerOf` (first owner from any matching adapter) and `isOwnable`; `adapterFor` removed.
+
+## Nametags
+- [x] Server config `bonding.alwaysShowPetNames` (default false, vanilla behavior). Applied on rename, claim and every bonded-pet load; all four release paths reset visibility to vanilla.
+
+## Other
+- [x] `zh_cn.json` from PR #6 (nil0bug), minus the unused `kindred.screen.break` key, LF line endings.
+- [x] `mod_version` 1.2.0 -> 1.3.0; `CHANGELOG.md` rewritten for 1.3.0.
+- [ ] Accepted: V on a pet during its death animation dismisses the corpse (pet is still loaded). Harmless: death snapshot already recorded, next summon revives it; refused anyway when a revival cooldown is set.
+- [ ] In-game check: permanent death, summon while dying, Petting-sat wolf summoned, waiting Petting pet summoned, nametag toggle both ways.

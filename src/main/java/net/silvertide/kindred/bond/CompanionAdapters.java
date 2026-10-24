@@ -25,23 +25,20 @@ public final class CompanionAdapters {
         return List.copyOf(adapters);
     }
 
-    public static Optional<CompanionAdapter> adapterFor(Entity entity) {
-        for (CompanionAdapter adapter : ADAPTERS) {
-            if (adapter.handles(entity)) return Optional.of(adapter);
-        }
-        return Optional.empty();
-    }
-
     public static boolean isOwnable(Entity entity) {
-        return adapterFor(entity).isPresent();
+        return ADAPTERS.stream().anyMatch(adapter -> adapter.handles(entity));
     }
 
     public static Optional<UUID> ownerOf(Entity entity) {
-        return adapterFor(entity).flatMap(adapter -> adapter.ownerOf(entity));
+        return ADAPTERS.stream()
+                .filter(adapter -> adapter.handles(entity))
+                .flatMap(adapter -> adapter.ownerOf(entity).stream())
+                .findFirst();
     }
 
     public static void wake(Entity entity) {
-        adapterFor(entity).ifPresent(adapter -> adapter.wake(entity));
+        entity.setShiftKeyDown(false);
+        ADAPTERS.forEach(adapter -> adapter.wake(entity));
     }
 
     private static final class VanillaOwnableAdapter implements CompanionAdapter {

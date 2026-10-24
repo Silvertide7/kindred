@@ -138,10 +138,6 @@ public class KindredSavedData extends SavedData {
         return killedWhileOffline.contains(bondId);
     }
 
-    public void clearKilledOffline(UUID bondId) {
-        if (killedWhileOffline.remove(bondId)) setDirty();
-    }
-
     public void markDiedOffline(UUID bondId, long timestampMs) {
         diedWhileOffline.put(bondId, timestampMs);
         setDirty();

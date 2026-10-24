@@ -21,5 +21,13 @@ public final class ClientConfig {
 
     static { BUILDER.pop(); }
 
+    static { BUILDER.push("ui"); }
+
+    public static final ModConfigSpec.BooleanValue USE_VANILLA_UI = BUILDER
+            .comment("Render the roster screen with vanilla Minecraft styling (gray panel, stock buttons).")
+            .define("useVanillaUI", false);
+
+    static { BUILDER.pop(); }
+
     public static final ModConfigSpec SPEC = BUILDER.build();
 }

@@ -4,6 +4,7 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.entity.Entity;
 import net.silvertide.kindred.bond.CompanionAdapter;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -11,7 +12,7 @@ public final class PettingCompat implements CompanionAdapter {
     public static final String MODID = "petting";
     private static final String TAMED_KEY = "pettingtamed";
     private static final String OWNER_KEY = "ownerUUID";
-    private static final String SITTING_KEY = "sitstill";
+    private static final List<String> STAY_MODE_KEYS = List.of("sitstill", "waiting", "freewander");
 
     @Override
     public boolean handles(Entity entity) {
@@ -31,6 +32,7 @@ public final class PettingCompat implements CompanionAdapter {
 
     @Override
     public void wake(Entity entity) {
-        entity.getPersistentData().putBoolean(SITTING_KEY, false);
+        CompoundTag data = entity.getPersistentData();
+        STAY_MODE_KEYS.forEach(data::remove);
     }
 }

@@ -27,7 +27,7 @@ public final class FamiliarsLibCompat {
 
         @Override
         public void wake(Entity entity) {
-            ((AbstractSpellCastingPet) entity).setSitting(false);
+            if (entity instanceof AbstractSpellCastingPet familiar) familiar.setSitting(false);
         }
     }
 

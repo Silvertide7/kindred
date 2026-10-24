@@ -1,3 +1,17 @@
-## 1.2.0
+## 1.3.0
 ---
-- Add compatability for Jurassic Reborn, Petting - tame any mob, and 
+- Pet nametags now only show while you look at the pet, like vanilla name tags. New server config `alwaysShowPetNames` brings back always-visible nametags
+- Pets released from a bond get vanilla nametag behavior back
+- New client config `useVanillaUI` renders the roster screen with a vanilla-style panel and buttons
+- Roster screen text no longer has drop shadows
+- Summoning now fully wakes pets that Petting put in sit, waiting or free-wander mode, and fixes their dimmed nametag
+- Fix Petting-tamed mobs not being bondable from the roster screen
+- Claiming now accepts ownership from any compat that recognizes the mob
+- `/kindred break` now respects the revival cooldown
+- Summoning a pet during its death animation now reports that it is respawning instead of failing
+- Pet deaths cancelled by another mod no longer start the revival cooldown
+- Summon walk-range check now uses full 3D distance, so pets far above or below teleport instead of pathing
+- Roster sync packets are trimmed and rate-limited
+- `/kindred` commands now refresh the roster screen
+- Fix roster list looking empty after breaking a bond while scrolled down
+- Fix roster selection resetting on window resize

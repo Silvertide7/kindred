@@ -37,6 +37,12 @@ public final class Config {
                      "If false, the Rename button is hidden and rename packets are rejected server-side.")
             .define("allowRename", true);
 
+    public static final ModConfigSpec.BooleanValue ALWAYS_SHOW_PET_NAMES = BUILDER
+            .comment("",
+                     "If true, named bonded pets show their nametag at all times. " +
+                     "If false (default), the nametag only shows while a player looks at the pet, like vanilla name tags.")
+            .define("alwaysShowPetNames", false);
+
     static { BUILDER.pop(); }
 
     static { BUILDER.push("summoning"); }
@@ -57,7 +63,7 @@ public final class Config {
 
     public static final ModConfigSpec.BooleanValue REQUIRE_SPACE = BUILDER
             .comment("",
-                     "If true, refuse to summon when the 3x3x3 space around the player is obstructed.")
+                     "If true, refuse to summon when the area around the player (5x5 footprint) is obstructed.")
             .define("requireSpace", true);
 
     public static final ModConfigSpec.BooleanValue ALLOW_WATER_SUMMON = BUILDER

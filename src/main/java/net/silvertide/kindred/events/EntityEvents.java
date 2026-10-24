@@ -9,6 +9,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
+import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
@@ -44,6 +45,7 @@ public final class EntityEvents {
         int worldRevision = saved.getRevision(bonded.bondId());
         if (worldRevision == 0) {
             entity.removeData(ModAttachments.BONDED.get());
+            entity.setCustomNameVisible(false);
             saved.clearBond(bonded.bondId());
             Kindred.LOGGER.info("[kindred] released orphaned copy of former bond {} (no revision on record)",
                     bonded.bondId());
@@ -59,12 +61,14 @@ public final class EntityEvents {
 
         if (saved.isPendingDisband(bonded.bondId())) {
             entity.removeData(ModAttachments.BONDED.get());
+            entity.setCustomNameVisible(false);
             saved.clearPendingDisband(bonded.bondId());
             saved.clearBond(bonded.bondId());
             return;
         }
 
         BondEntityIndex.get().track(bonded.bondId(), entity);
+        BondService.applyNameVisibility(entity);
     }
 
     @SubscribeEvent
@@ -79,7 +83,7 @@ public final class EntityEvents {
         snapshotEntity(level, entity, bonded);
     }
 
-    @SubscribeEvent
+    @SubscribeEvent(priority = EventPriority.LOWEST)
     public static void onLivingDeath(LivingDeathEvent event) {
         Entity entity = event.getEntity();
         if (!entity.hasData(ModAttachments.BONDED.get())) return;

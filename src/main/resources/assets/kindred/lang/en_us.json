@@ -8,7 +8,6 @@
   "kindred.screen.summon": "Summon",
   "kindred.screen.respawning": "Respawning in %s",
   "kindred.screen.dismiss": "Dismiss",
-  "kindred.screen.break": "Break",
   "kindred.screen.break_confirm": "Confirm",
   "kindred.screen.bind": "Bond to this %s",
   "kindred.screen.bind_hint": "Look at a tamed pet to bind it",

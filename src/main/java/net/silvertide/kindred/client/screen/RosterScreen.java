@@ -3,9 +3,7 @@ package net.silvertide.kindred.client.screen;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.client.gui.screens.inventory.InventoryScreen;
 import net.minecraft.network.chat.Component;
-import net.minecraft.world.entity.LivingEntity;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.silvertide.kindred.bond.HoldManager;
 import net.silvertide.kindred.client.data.ClientRosterData;
@@ -20,14 +18,21 @@ import net.silvertide.kindred.network.packet.C2SRequestHold;
 import java.util.List;
 import java.util.UUID;
 
+import net.silvertide.kindred.client.screen.ScreenDrawUtil.ButtonState;
+
 import static net.silvertide.kindred.client.screen.ScreenDrawUtil.dimensionName;
 import static net.silvertide.kindred.client.screen.ScreenDrawUtil.drawBorder;
 import static net.silvertide.kindred.client.screen.ScreenDrawUtil.drawButton;
+import static net.silvertide.kindred.client.screen.ScreenDrawUtil.drawCenteredText;
 import static net.silvertide.kindred.client.screen.ScreenDrawUtil.drawRadialSweep;
 import static net.silvertide.kindred.client.screen.ScreenDrawUtil.drawStar;
+import static net.silvertide.kindred.client.screen.ScreenDrawUtil.drawVanillaPanel;
 import static net.silvertide.kindred.client.screen.ScreenDrawUtil.entityTypeName;
 import static net.silvertide.kindred.client.screen.ScreenDrawUtil.formatDurationCoarse;
 import static net.silvertide.kindred.client.screen.ScreenDrawUtil.inBox;
+import static net.silvertide.kindred.client.screen.ScreenDrawUtil.panelMutedTextColor;
+import static net.silvertide.kindred.client.screen.ScreenDrawUtil.panelTextColor;
+import static net.silvertide.kindred.client.screen.ScreenDrawUtil.vanillaStyle;
 
 public final class RosterScreen extends Screen {
     private static final int PANEL_WIDTH = 400;
@@ -65,10 +70,14 @@ public final class RosterScreen extends Screen {
     private static final int C_BTN_DISMISS = 0xFF6A5A3A;
     private static final int C_BTN_DISMISS_HOVER = 0xFF8A7A52;
     private static final int C_BTN_DISMISS_DISABLED = 0xFF2A2620;
-    private static final int C_BTN_TEXT_DISABLED = 0xFF6F6A60;
     private static final int C_STAR_ACTIVE = 0xFFE7B43B;
     private static final int C_RENAME_EDIT_TEXT = 0xFFE7B43B;
     private static final int C_STAR_INACTIVE = 0xFF4A5260;
+    private static final int C_VANILLA_STAR_INACTIVE = 0xFF8B8B8B;
+    private static final int C_VANILLA_SEPARATOR = 0xFF8B8B8B;
+    private static final int C_VANILLA_ROW_BG = 0xFF373737;
+    private static final int C_VANILLA_ROW_HOVER = 0xFF4F4F4F;
+    private static final int C_VANILLA_ROW_SELECTED = 0xFF6B6B6B;
     private static final int C_PIE_FILL = 0xFFB0C4D8;
     private static final int C_PIE_RADIUS = 5;
 
@@ -119,7 +128,6 @@ public final class RosterScreen extends Screen {
         claimBtnY = topPos + panelHeight - FOOTER_H + (FOOTER_H - CLAIM_BTN_H) / 2;
 
         previewPane.configureLayout(previewX, rowsTop, rowsBottom);
-        previewPane.selectActiveOnOpen();
 
         int costLineY = topPos + panelHeight - FOOTER_H + 1;
         bindFooter.configureLayout(claimBtnX, claimBtnY, claimBtnW, costLineY);
@@ -142,36 +150,41 @@ public final class RosterScreen extends Screen {
 
     @Override
     public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
+        scrollOffset = Math.min(scrollOffset, maxScrollOffset());
         processRowHold(mouseX, mouseY);
         bindFooter.tickHold(mouseX, mouseY);
 
         super.render(g, mouseX, mouseY, partialTick);
 
-        g.fill(leftPos, topPos, leftPos + PANEL_WIDTH, topPos + panelHeight, C_BG);
-        drawBorder(g, leftPos, topPos, PANEL_WIDTH, panelHeight, C_BORDER);
+        if (vanillaStyle()) {
+            drawVanillaPanel(g, leftPos, topPos, PANEL_WIDTH, panelHeight);
+        } else {
+            g.fill(leftPos, topPos, leftPos + PANEL_WIDTH, topPos + panelHeight, C_BG);
+            drawBorder(g, leftPos, topPos, PANEL_WIDTH, panelHeight, C_BORDER);
+        }
 
-        g.drawCenteredString(font, getTitle(), leftPos + PANEL_WIDTH / 2, topPos + 8, C_TEXT);
+        drawCenteredText(g, font, getTitle(), leftPos + PANEL_WIDTH / 2, topPos + 8, panelTextColor());
 
         int bondCount = ClientRosterData.bonds().size();
         int maxBonds = ClientRosterData.effectiveMaxBonds();
-        g.drawString(font, bondCount + "/" + maxBonds, leftPos + 6, topPos + 8, C_TEXT_MUTED);
+        g.drawString(font, bondCount + "/" + maxBonds, leftPos + 6, topPos + 8, panelMutedTextColor(), false);
 
         if (ClientRosterData.isGlobalSummonOnCooldown()) {
             long remainingMs = ClientRosterData.globalCooldownRemainingMsNow();
             Component text = Component.translatable("kindred.screen.summon_cooldown",
                     formatDurationCoarse(remainingMs));
             int tw = font.width(text);
-            g.drawString(font, text, leftPos + PANEL_WIDTH - 6 - tw, topPos + 8, C_TEXT_MUTED);
+            g.drawString(font, text, leftPos + PANEL_WIDTH - 6 - tw, topPos + 8, panelMutedTextColor(), false);
         }
 
-        g.fill(separatorX, rowsTop, separatorX + 1, rowsBottom, C_SEPARATOR);
+        g.fill(separatorX, rowsTop, separatorX + 1, rowsBottom, vanillaStyle() ? C_VANILLA_SEPARATOR : C_SEPARATOR);
 
         previewPane.refreshSelection();
 
         List<BondView> bonds = ClientRosterData.bonds();
         if (bonds.isEmpty()) {
-            g.drawCenteredString(font, Component.translatable("kindred.screen.empty"),
-                    leftPos + ROW_PAD + ROW_W / 2, (rowsTop + rowsBottom) / 2 - 4, C_TEXT_MUTED);
+            drawCenteredText(g, font, Component.translatable("kindred.screen.empty"),
+                    leftPos + ROW_PAD + ROW_W / 2, (rowsTop + rowsBottom) / 2 - 4, panelMutedTextColor());
         } else {
             int rowsLeft = leftPos + ROW_PAD;
             g.enableScissor(rowsLeft, rowsTop, rowsLeft + ROW_W, rowsBottom);
@@ -244,12 +257,15 @@ public final class RosterScreen extends Screen {
         int rowH = ROW_HEIGHT - 2;
         boolean rowHover = mx >= x && mx < x + w && my >= y && my < y + rowH;
         boolean selected = previewPane.isSelected(bond.bondId());
-        int rowBg = selected ? C_ROW_SELECTED : (rowHover ? C_ROW_HOVER : C_ROW_BG);
+        int rowBg = vanillaStyle()
+                ? (selected ? C_VANILLA_ROW_SELECTED : (rowHover ? C_VANILLA_ROW_HOVER : C_VANILLA_ROW_BG))
+                : (selected ? C_ROW_SELECTED : (rowHover ? C_ROW_HOVER : C_ROW_BG));
         g.fill(x, y, x + w, y + rowH, rowBg);
 
         int starCx = x + STAR_COL_W / 2;
         int starCy = y + rowH / 2;
-        int starColor = bond.isActive() ? C_STAR_ACTIVE : C_STAR_INACTIVE;
+        int inactiveStarColor = vanillaStyle() ? C_VANILLA_STAR_INACTIVE : C_STAR_INACTIVE;
+        int starColor = bond.isActive() ? C_STAR_ACTIVE : inactiveStarColor;
         drawStar(g, starCx, starCy, starColor);
 
         int textX = x + STAR_COL_W + 4;
@@ -262,7 +278,7 @@ public final class RosterScreen extends Screen {
         } else {
             name = bond.displayName().orElseGet(() -> entityTypeName(bond).getString());
         }
-        g.drawString(font, name, textX, y + ROW_NAME_Y_OFFSET, nameColor);
+        g.drawString(font, name, textX, y + ROW_NAME_Y_OFFSET, nameColor, false);
 
         Component stateOrDim;
         if (ClientRosterData.isRevivalPending(bond)) {
@@ -273,7 +289,7 @@ public final class RosterScreen extends Screen {
             stateOrDim = Component.translatable("kindred.screen.state_resting");
         }
         Component subtitle = entityTypeName(bond).copy().append(" · ").append(stateOrDim);
-        g.drawString(font, subtitle, textX, y + ROW_SUBTITLE_Y_OFFSET, C_TEXT_MUTED);
+        g.drawString(font, subtitle, textX, y + ROW_SUBTITLE_Y_OFFSET, C_TEXT_MUTED, false);
 
         int btnH = ROW_BTN_H;
         int btnY = y + 2;
@@ -345,12 +361,11 @@ public final class RosterScreen extends Screen {
             } else {
                 summonLabel = Component.translatable("kindred.screen.summon");
             }
-            int summonTextColor = summonDisabled ? C_BTN_TEXT_DISABLED : C_TEXT;
             drawButton(g, font, summonX, btnY, summonW, btnH,
                     summonLabel,
                     summonColor,
                     summonHoldProgress,
-                    summonTextColor);
+                    ButtonState.of(!summonDisabled, summonHover));
             if (sweepTotalMs > 0L && sweepRemainingMs > 0L) {
                 float progress = Math.min(1F, sweepRemainingMs / (float) sweepTotalMs);
                 int pieCx = summonX + summonW / 2;
@@ -367,7 +382,8 @@ public final class RosterScreen extends Screen {
             drawButton(g, font, confirmX, btnY, confirmW, btnH,
                     Component.translatable("kindred.screen.break_confirm"),
                     confirmHover ? C_BTN_BREAK_CONFIRM : C_BTN_BREAK_HOVER,
-                    breakHoldProgress);
+                    breakHoldProgress,
+                    ButtonState.of(true, confirmHover).withAccent(C_BTN_BREAK_CONFIRM));
         } else {
             if (dismissEnabled) {
                 boolean dismissDisabled = ClientRosterData.isRevivalPending(bond) || !bond.loaded();
@@ -375,12 +391,11 @@ public final class RosterScreen extends Screen {
                 int dismissColor = dismissDisabled
                         ? C_BTN_DISMISS_DISABLED
                         : (dismissHover ? C_BTN_DISMISS_HOVER : C_BTN_DISMISS);
-                int dismissTextColor = dismissDisabled ? C_BTN_TEXT_DISABLED : C_TEXT;
                 drawButton(g, font, dismissX, btnY, dismissW, btnH,
                         Component.translatable("kindred.screen.dismiss"),
                         dismissColor,
                         dismissHoldProgress,
-                        dismissTextColor);
+                        ButtonState.of(!dismissDisabled, dismissHover));
             }
 
             boolean breakDisabled = ClientRosterData.isRevivalPending(bond);
@@ -388,12 +403,10 @@ public final class RosterScreen extends Screen {
             int breakColor = breakDisabled
                     ? C_BTN_BREAK_DISABLED
                     : (breakHover ? C_BTN_BREAK_HOVER : C_BTN_BREAK);
-            int breakTextColor = breakDisabled ? C_BTN_TEXT_DISABLED : C_TEXT;
             drawButton(g, font, breakSmallX, btnY, breakSmallW, btnH,
                     Component.literal("X"),
                     breakColor,
-                    0F,
-                    breakTextColor);
+                    ButtonState.of(!breakDisabled, breakHover));
         }
     }
 
@@ -515,12 +528,14 @@ public final class RosterScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
-        int n = ClientRosterData.bonds().size();
-        int visibleRows = (rowsBottom - rowsTop) / ROW_HEIGHT;
-        int maxOffset = Math.max(0, n - visibleRows);
         if (scrollY > 0) scrollOffset = Math.max(0, scrollOffset - 1);
-        else if (scrollY < 0) scrollOffset = Math.min(maxOffset, scrollOffset + 1);
+        else if (scrollY < 0) scrollOffset = Math.min(maxScrollOffset(), scrollOffset + 1);
         return true;
+    }
+
+    private int maxScrollOffset() {
+        int visibleRows = (rowsBottom - rowsTop) / ROW_HEIGHT;
+        return Math.max(0, ClientRosterData.bonds().size() - visibleRows);
     }
 
     @Override

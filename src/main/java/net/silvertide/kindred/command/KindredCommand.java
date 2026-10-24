@@ -67,6 +67,7 @@ public final class KindredCommand {
             return 0;
         }
         ClaimResult result = BondService.tryClaim(player, target);
+        ServerPacketHandler.sendRosterSync(player);
         ctx.getSource().sendSuccess(() -> Component.literal("Claim " + describeEntityType(target) + ": " + result.name()), false);
         return result == ClaimResult.CLAIMED ? 1 : 0;
     }
@@ -105,10 +106,9 @@ public final class KindredCommand {
             return 0;
         }
         SummonResult result = BondService.summon(player, bond.bondId());
+        ServerPacketHandler.sendRosterSync(player);
         ctx.getSource().sendSuccess(() -> Component.literal("Summon [" + index + "] " + shortId(bond.bondId()) + ": " + result.name()), false);
-        return result == SummonResult.WALKING
-                || result == SummonResult.TELEPORTED_NEAR
-                || result == SummonResult.SUMMONED_FRESH ? 1 : 0;
+        return result.isSuccess() ? 1 : 0;
     }
 
     private static int runBreak(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
@@ -120,6 +120,7 @@ public final class KindredCommand {
             return 0;
         }
         BreakResult result = BondService.breakBond(player, bond.bondId());
+        ServerPacketHandler.sendRosterSync(player);
         ctx.getSource().sendSuccess(() -> Component.literal("Break [" + index + "] " + shortId(bond.bondId()) + ": " + result.name()), false);
         return result == BreakResult.BROKEN ? 1 : 0;
     }
@@ -133,6 +134,7 @@ public final class KindredCommand {
             return 0;
         }
         DismissResult result = BondService.dismiss(player, bond.bondId());
+        ServerPacketHandler.sendRosterSync(player);
         ctx.getSource().sendSuccess(() -> Component.literal("Dismiss [" + index + "] " + shortId(bond.bondId()) + ": " + result.name()), false);
         return result == DismissResult.DISMISSED ? 1 : 0;
     }

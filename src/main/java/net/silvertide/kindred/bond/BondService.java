@@ -47,9 +47,8 @@ public final class BondService {
     }
 
     public static ClaimResult checkClaimEligibility(ServerPlayer player, Entity target) {
-        Optional<CompanionAdapter> adapter = CompanionAdapters.adapterFor(target);
-        if (adapter.isEmpty()) return ClaimResult.NOT_OWNABLE;
-        if (!adapter.get().ownerOf(target).map(player.getUUID()::equals).orElse(false)) return ClaimResult.NOT_OWNED_BY_PLAYER;
+        if (!CompanionAdapters.isOwnable(target)) return ClaimResult.NOT_OWNABLE;
+        if (!CompanionAdapters.ownerOf(target).map(player.getUUID()::equals).orElse(false)) return ClaimResult.NOT_OWNED_BY_PLAYER;
 
         var typeHolder = BuiltInRegistries.ENTITY_TYPE.wrapAsHolder(target.getType());
         boolean allowlistActive = BuiltInRegistries.ENTITY_TYPE.getTag(ModTags.BOND_ALLOWLIST)
@@ -117,6 +116,7 @@ public final class BondService {
         }
         player.setData(ModAttachments.BOND_ROSTER.get(), newRoster);
         target.setData(ModAttachments.BONDED.get(), new Bonded(bondId, player.getUUID(), revision));
+        applyNameVisibility(target);
         BondEntityIndex.get().track(bondId, target);
 
         int xpCost = Config.BOND_XP_LEVEL_COST.get();
@@ -132,6 +132,7 @@ public final class BondService {
         BondRoster roster = player.getData(ModAttachments.BOND_ROSTER.get());
         Optional<Bond> maybeBond = roster.get(bondId);
         if (maybeBond.isEmpty()) return BreakResult.NO_SUCH_BOND;
+        if (isRevivalPending(maybeBond.get())) return BreakResult.REVIVAL_PENDING;
 
         ServerLevel level = (ServerLevel) player.level();
         KindredSavedData saved = KindredSavedData.get(level);
@@ -155,6 +156,7 @@ public final class BondService {
             Entity entity = existing.get();
             entity.removeData(ModAttachments.BONDED.get());
             BondEntityIndex.get().untrack(bondId);
+            entity.setCustomNameVisible(false);
             saved.clearBond(bondId);
         } else {
             saved.markPendingDisband(bondId);
@@ -217,6 +219,10 @@ public final class BondService {
         return Optional.empty();
     }
 
+    private static boolean isDying(Entity entity) {
+        return entity instanceof LivingEntity living && living.isDeadOrDying();
+    }
+
     public static boolean isRevivalPending(Bond bond) {
         if (bond.diedAt().isEmpty()) return false;
         long revivalCooldownMs = Config.revivalCooldownMs();
@@ -244,14 +250,13 @@ public final class BondService {
         }
 
         Optional<Entity> existing = BondEntityIndex.get().find(bondId);
+        if (existing.isPresent() && isDying(existing.get())) return SummonResult.REVIVAL_PENDING;
         if (existing.isPresent()) {
             Entity old = existing.get();
             ResourceKey<Level> oldDim = old.level().dimension();
 
             if (oldDim.equals(playerDim)) {
-                double dx = old.getX() - player.getX();
-                double dz = old.getZ() - player.getZ();
-                double distSq = dx * dx + dz * dz;
+                double distSq = old.distanceToSqr(player);
                 double walkRange = Config.WALK_RANGE.get();
 
                 if (distSq <= walkRange * walkRange && old instanceof Mob mob) {
@@ -285,7 +290,7 @@ public final class BondService {
         old.teleportTo(spawnPos.x, spawnPos.y, spawnPos.z);
 
         int newRevision = saved.incrementRevision(bondId);
-        old.setData(ModAttachments.BONDED.get(), old.getData(ModAttachments.BONDED.get()).withRevision(newRevision));
+        old.setData(ModAttachments.BONDED.get(), new Bonded(bondId, player.getUUID(), newRevision));
 
         playSummonFx(level, spawnPos.x, spawnPos.y, spawnPos.z, true);
 
@@ -342,7 +347,7 @@ public final class BondService {
         if (teleported instanceof LivingEntity teleportedLiving) freshenForSummon(teleportedLiving);
 
         int newRevision = saved.incrementRevision(bondId);
-        teleported.setData(ModAttachments.BONDED.get(), teleported.getData(ModAttachments.BONDED.get()).withRevision(newRevision));
+        teleported.setData(ModAttachments.BONDED.get(), new Bonded(bondId, player.getUUID(), newRevision));
 
         playSummonFx(targetLevel, spawnPos.x, spawnPos.y, spawnPos.z, true);
 
@@ -428,10 +433,14 @@ public final class BondService {
         return SummonResult.SUMMONED_FRESH;
     }
 
+    public static void applyNameVisibility(Entity entity) {
+        if (entity.hasCustomName()) entity.setCustomNameVisible(Config.ALWAYS_SHOW_PET_NAMES.get());
+    }
+
     public static void applyDisplayName(Entity entity, Optional<String> displayName) {
         if (displayName.isPresent()) {
             entity.setCustomName(Component.literal(displayName.get()));
-            entity.setCustomNameVisible(true);
+            entity.setCustomNameVisible(Config.ALWAYS_SHOW_PET_NAMES.get());
         } else {
             entity.setCustomName(null);
             entity.setCustomNameVisible(false);

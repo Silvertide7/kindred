@@ -12,19 +12,24 @@ import net.silvertide.kindred.Kindred;
 import net.silvertide.kindred.network.BondView;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 public final class PreviewEntityCache {
     private static final int ABSTRACT_HORSE_FLAG_SADDLE = 4;
 
     private static final Map<UUID, LivingEntity> cache = new HashMap<>();
+    private static final Set<UUID> failedBuilds = new HashSet<>();
 
     public static LivingEntity getOrBuild(BondView view) {
         LivingEntity cached = cache.get(view.bondId());
         if (cached != null) return cached;
+        if (failedBuilds.contains(view.bondId())) return null;
         LivingEntity built = build(view);
         if (built != null) cache.put(view.bondId(), built);
+        else failedBuilds.add(view.bondId());
         return built;
     }
 
@@ -70,6 +75,7 @@ public final class PreviewEntityCache {
 
     public static void clear() {
         cache.clear();
+        failedBuilds.clear();
     }
 
     private PreviewEntityCache() {}

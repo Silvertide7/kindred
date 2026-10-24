@@ -27,7 +27,7 @@ public final class JurassicRebornCompat {
 
         @Override
         public void wake(Entity entity) {
-            DinosaurEntity dinosaur = (DinosaurEntity) entity;
+            if (!(entity instanceof DinosaurEntity dinosaur)) return;
             dinosaur.disturbSleep();
             dinosaur.setFieldOrder(DinosaurEntity.Order.FOLLOW);
         }

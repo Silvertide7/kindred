@@ -1,5 +1,4 @@
-## 1.4.1
+## 1.4.2
 ---
-- Auto-Mount no longer places your pet next to lava
-- Auto-Mount no longer triggers mid-jump, where the pet would spawn in mid-air
-- If Auto-Mount can't mount you (for example, summoning right after getting off another mount), the pet now moves to a free spot beside you instead of standing inside you
+- Fix pets becoming impossible to dismiss or summon after being teleported along with you by another mod (for example, riding a horse home with a Homebound stone)
+- Fix a failed summon leaving behind an invisible "phantom" pet that dismiss would target instead of the real one

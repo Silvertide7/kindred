@@ -78,7 +78,7 @@ public final class EntityEvents {
         if (!entity.hasData(ModAttachments.BONDED.get())) return;
 
         Bonded bonded = entity.getData(ModAttachments.BONDED.get());
-        BondEntityIndex.get().untrack(bonded.bondId(), entity);
+        if (entity.isRemoved()) BondEntityIndex.get().untrack(bonded.bondId(), entity);
 
         snapshotEntity(level, entity, bonded);
     }

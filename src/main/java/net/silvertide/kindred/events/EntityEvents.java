@@ -86,7 +86,7 @@ public final class EntityEvents {
         if (maybeBonded.isEmpty()) return;
 
         Bonded bonded = maybeBonded.get();
-        BondEntityIndex.get().untrack(bonded.bondId(), entity);
+        if (entity.isRemoved()) BondEntityIndex.get().untrack(bonded.bondId(), entity);
 
         snapshotEntity(level, entity, bonded);
     }

@@ -472,6 +472,7 @@ public final class BondService {
         KindredData.setBonded(entity, new Bonded(bond.bondId(), player.getUUID(), newRevision));
 
         if (!targetLevel.addFreshEntity(entity)) {
+            BondEntityIndex.get().untrack(bond.bondId(), entity);
             Kindred.LOGGER.warn("[kindred] SPAWN_FAILED: addFreshEntity rejected {} at {} in {} (bond {} for {})",
                     bond.entityType(), spawnPos, targetLevel.dimension().location(),
                     bond.bondId(), player.getGameProfile().getName());

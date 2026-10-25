@@ -69,7 +69,7 @@ Port of the 1.20.1 Auto-Mount feature. `./gradlew compileJava` passes. Not teste
 - [x] 6. (R) `findSummonPosition` / `NO_SPACE` / `get()` three-line block repeats in three places. Reviewer agreed it isn't worth an abstraction.
 
 ## Open
-- [ ] 7. (S) Fixes 1–4 exist only on main. The 1-20-1 branch has the same code; port them if 1.20.1 gets another release.
+- [x] 7. (S) Fixes 1–4 ported to 1-20-1 for its 1.4.1 release.
 - [ ] 8. (S) The git-ignored `CLAUDE.md` is shared across branches and describes the Forge 1.20.1 port, so it is inaccurate on main (attachments, payloads, `entity_type/` tag folder).
 
 ## Checked and fine
@@ -80,3 +80,11 @@ Port of the 1.20.1 Auto-Mount feature. `./gradlew compileJava` passes. Not teste
 - `allowAutoMount` is a SERVER config (synced to clients); entity tags sync too, so the client checkbox matches the server.
 - No client classes referenced from common code; checkbox sits in the empty top strip of the preview pane.
 - Revival heals before the mount check; `releaseFromSnapshot` never mounts.
+
+# Auto-Mount 1.4.1 (main)
+
+Ported three fixes found by the 1-20-1 1.4.1 audit. `./gradlew build` passes. Not tested in-game.
+
+- [x] 1. Auto-mount position skipped the spawn locator's lava check, so a horse's box could reach into lava beside the player. `hasSafeRoomForMountAndRider` now calls `BondSpawnLocator.hasLavaInOrNear` (made package-private).
+- [x] 2. `isPlayerGrounded` accepts ground up to 2 blocks below, so a summon finishing mid-jump spawned the pet in mid-air. Auto-mount now requires `player.onGround()`.
+- [x] 3. A refused `startRiding` (3-second boarding cooldown after a dismount, a mount's `canAddPassenger`, a cancelled mount event) left the pet inside the player. `mountPet` returns the result and `mountPetOrPlaceNearby` moves the pet to a `BondSpawnLocator` spot on failure.

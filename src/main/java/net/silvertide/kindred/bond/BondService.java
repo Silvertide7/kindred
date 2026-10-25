@@ -20,6 +20,7 @@ import net.minecraft.world.entity.animal.horse.AbstractHorse;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.portal.DimensionTransition;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.common.NeoForge;
 import net.silvertide.kindred.Kindred;
@@ -286,14 +287,14 @@ public final class BondService {
                 && bond.autoMount()
                 && isPlayerReadyToMount(player)
                 && isPetReadyToBeRidden(pet)
-                && hasRoomForMountAndRider(player, pet);
+                && hasSafeRoomForMountAndRider(player, pet);
     }
 
     private static boolean isPlayerReadyToMount(ServerPlayer player) {
         return !player.isPassenger()
                 && !player.isShiftKeyDown()
                 && !player.isInWater()
-                && BondSpawnLocator.isPlayerGrounded(player);
+                && player.onGround();
     }
 
     private static boolean isPetReadyToBeRidden(Entity pet) {
@@ -304,18 +305,25 @@ public final class BondService {
         return true;
     }
 
-    private static boolean hasRoomForMountAndRider(ServerPlayer player, Entity pet) {
-        return player.level().noCollision(pet.getDimensions(Pose.STANDING)
-                .makeBoundingBox(player.position())
-                .expandTowards(0.0D, player.getDimensions(Pose.STANDING).height(), 0.0D));
+    private static boolean hasSafeRoomForMountAndRider(ServerPlayer player, Entity pet) {
+        AABB petBox = pet.getDimensions(Pose.STANDING).makeBoundingBox(player.position());
+        AABB petAndRiderBox = petBox.expandTowards(0.0D, player.getDimensions(Pose.STANDING).height(), 0.0D);
+        ServerLevel level = player.serverLevel();
+        return level.noCollision(petAndRiderBox) && !BondSpawnLocator.hasLavaInOrNear(level, petBox);
     }
 
-    private static void mountPet(ServerPlayer player, Entity pet) {
+    private static void mountPetOrPlaceNearby(ServerPlayer player, Entity pet) {
+        if (mountPet(player, pet)) return;
+        BondSpawnLocator.findSpawnLocation(player.serverLevel(), player, pet.getType().getDimensions())
+                .ifPresent(nearby -> pet.teleportTo(nearby.x, nearby.y, nearby.z));
+    }
+
+    private static boolean mountPet(ServerPlayer player, Entity pet) {
         if (pet instanceof AbstractHorse horse) {
             horse.setEating(false);
             horse.setStanding(false);
         }
-        player.startRiding(pet);
+        return player.startRiding(pet);
     }
 
     private static Optional<Vec3> findSummonPosition(ServerLevel level, ServerPlayer player, EntityType<?> petType, boolean autoMount) {
@@ -337,7 +345,7 @@ public final class BondService {
         old.stopRiding();
         old.setYRot(player.getYRot());
         old.teleportTo(spawnPos.x, spawnPos.y, spawnPos.z);
-        if (autoMount) mountPet(player, old);
+        if (autoMount) mountPetOrPlaceNearby(player, old);
 
         int newRevision = saved.incrementRevision(bondId);
         old.setData(ModAttachments.BONDED.get(), new Bonded(bondId, player.getUUID(), newRevision));
@@ -390,7 +398,7 @@ public final class BondService {
 
         applyDisplayName(teleported, bond.displayName());
         if (teleported instanceof LivingEntity teleportedLiving) freshenForSummon(teleportedLiving);
-        if (autoMount) mountPet(player, teleported);
+        if (autoMount) mountPetOrPlaceNearby(player, teleported);
 
         int newRevision = saved.incrementRevision(bondId);
         teleported.setData(ModAttachments.BONDED.get(), new Bonded(bondId, player.getUUID(), newRevision));
@@ -468,7 +476,7 @@ public final class BondService {
                     bond.bondId(), player.getGameProfile().getName());
             return SummonResult.SPAWN_FAILED;
         }
-        if (autoMount) mountPet(player, entity);
+        if (autoMount) mountPetOrPlaceNearby(player, entity);
 
         playSummonFx(targetLevel, spawnPos.x, spawnPos.y, spawnPos.z, true);
 

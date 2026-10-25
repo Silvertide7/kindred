@@ -157,7 +157,7 @@ public final class BondSpawnLocator {
         return false;
     }
 
-    private static boolean hasLavaInOrNear(ServerLevel level, AABB bbox) {
+    static boolean hasLavaInOrNear(ServerLevel level, AABB bbox) {
         AABB scanRegion = bbox.inflate(LAVA_BUFFER_HORIZONTAL, LAVA_BUFFER_VERTICAL, LAVA_BUFFER_HORIZONTAL);
         BlockPos min = BlockPos.containing(scanRegion.minX, scanRegion.minY, scanRegion.minZ);
         BlockPos max = BlockPos.containing(

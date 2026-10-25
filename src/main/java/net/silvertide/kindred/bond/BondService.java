@@ -20,6 +20,7 @@ import net.minecraft.world.entity.animal.horse.AbstractHorse;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.portal.PortalInfo;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.common.util.ITeleporter;
@@ -281,13 +282,14 @@ public final class BondService {
                 && bond.autoMount()
                 && isPlayerReadyToMount(player)
                 && isPetReadyToBeRidden(pet)
-                && hasRoomForMountAndRider(player, pet);
+                && hasSafeRoomForMountAndRider(player, pet);
     }
 
     private static boolean isPlayerReadyToMount(ServerPlayer player) {
         return !player.isPassenger()
                 && !player.isShiftKeyDown()
-                && BondSpawnLocator.isPlayerGrounded(player);
+                && !player.isInWater()
+                && player.onGround();
     }
 
     private static boolean isPetReadyToBeRidden(Entity pet) {
@@ -298,10 +300,25 @@ public final class BondService {
         return true;
     }
 
-    private static boolean hasRoomForMountAndRider(ServerPlayer player, Entity pet) {
-        return player.level().noCollision(pet.getType().getDimensions()
-                .makeBoundingBox(player.position())
-                .expandTowards(0.0D, player.getDimensions(Pose.STANDING).height, 0.0D));
+    private static boolean hasSafeRoomForMountAndRider(ServerPlayer player, Entity pet) {
+        AABB petBox = pet.getDimensions(Pose.STANDING).makeBoundingBox(player.position());
+        AABB petAndRiderBox = petBox.expandTowards(0.0D, player.getDimensions(Pose.STANDING).height, 0.0D);
+        ServerLevel level = player.serverLevel();
+        return level.noCollision(petAndRiderBox) && !BondSpawnLocator.hasLavaInOrNear(level, petBox);
+    }
+
+    private static void mountPetOrPlaceNearby(ServerPlayer player, Entity pet) {
+        if (mountPet(player, pet)) return;
+        BondSpawnLocator.findSpawnLocation(player.serverLevel(), player, pet.getType().getDimensions())
+                .ifPresent(nearby -> pet.teleportTo(nearby.x, nearby.y, nearby.z));
+    }
+
+    private static boolean mountPet(ServerPlayer player, Entity pet) {
+        if (pet instanceof AbstractHorse horse) {
+            horse.setEating(false);
+            horse.setStanding(false);
+        }
+        return player.startRiding(pet);
     }
 
     private static Optional<Vec3> findSummonPosition(ServerLevel level, ServerPlayer player, EntityType<?> petType, boolean autoMount) {
@@ -323,7 +340,7 @@ public final class BondService {
         old.stopRiding();
         old.setYRot(player.getYRot());
         old.teleportTo(spawnPos.x, spawnPos.y, spawnPos.z);
-        if (autoMount) player.startRiding(old, true);
+        if (autoMount) mountPetOrPlaceNearby(player, old);
 
         // This probably isn't necessary, but in the case that a chunk crashes while the tp is happening this will guarantee de-duping the entity.
         int newRevision = saved.incrementRevision(bondId);
@@ -382,7 +399,7 @@ public final class BondService {
 
         applyDisplayName(teleported, bond.displayName());
         if (teleported instanceof LivingEntity teleportedLiving) freshenForSummon(teleportedLiving);
-        if (autoMount) player.startRiding(teleported, true);
+        if (autoMount) mountPetOrPlaceNearby(player, teleported);
 
         int newRevision = saved.incrementRevision(bondId);
         KindredData.setBonded(teleported, new Bonded(bondId, player.getUUID(), newRevision));
@@ -460,7 +477,7 @@ public final class BondService {
                     bond.bondId(), player.getGameProfile().getName());
             return SummonResult.SPAWN_FAILED;
         }
-        if (autoMount) player.startRiding(entity, true);
+        if (autoMount) mountPetOrPlaceNearby(player, entity);
 
         playSummonFx(targetLevel, spawnPos.x, spawnPos.y, spawnPos.z, true);
 

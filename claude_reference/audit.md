@@ -247,3 +247,25 @@ Pass for simplicity, naming and smells. `./gradlew compileJava` passes. Not test
 - [x] 10. (R) Client UI called `BondService.isMountable`. Moved the predicate to `bond/Mountability`.
 - [x] 11. (R) `mountableInterface` config was redundant with the `auto_mount_denylist` tag. Removed; mountable is now `PlayerRideable` or `Saddleable`, minus the tag.
 - [ ] 12. (R) `tryClaim` builds `Bond` with trailing positional booleans (`false, true`). Existing pattern; consider a `Bond.newlyClaimed(...)` factory if another field is added.
+
+# Auto-Mount 1.4.1 audit (1-20-1, Forge 1.20.1)
+
+Ported the four main-branch audit fixes (water check, unforced `startRiding`, `mountPet` horse eat/rear reset, `getDimensions(Pose.STANDING)`), bumped to 1.4.1, then audited the whole feature against the Forge 1.20.1 sources. `./gradlew build` passes. Not tested in-game. Sources: self-audit (S) and an independent reviewer (R). The reviewer confirmed all four ported fixes are implemented correctly for 1.20.1.
+
+## Fixed
+- [x] 1. (R) The auto-mount position skipped the spawn locator's lava check: next to a lava pool a horse's box (1.4 wide vs the player's 0.6) reached into the lava and it caught fire. `hasSafeRoomForMountAndRider` now also calls `BondSpawnLocator.hasLavaInOrNear` (made package-private).
+- [x] 2. (R) `isPlayerGrounded` passes with sturdy ground up to 2 blocks below, so a summon finishing mid-jump spawned the pet in mid-air. Auto-mount now requires `player.onGround()`.
+
+## Open
+- [x] 3. (R) Fixed: `mountPet` now returns the `startRiding` result and `mountPetOrPlaceNearby` moves the pet to a `BondSpawnLocator` spot on failure (left in place if none is found). Original issue: unforced `startRiding` can fail (3-second boarding cooldown after a dismount, a mount's own `canAddPassenger`, a cancelled `EntityMountEvent`). The pet was already placed at the player's exact position, so it is left inside the player and the summon still reports success. Realistic case: dismiss horse A while riding it, then summon horse B within 3 seconds. Fix: have `mountPet` return the result and move the pet to a `BondSpawnLocator` spot on failure.
+- [ ] 4. (R) Headroom check requires full pet height + standing player height (horse: 3.4 blocks), but vanilla riding fits in a 3-high tunnel. Safe, just stricter than needed; auto-mount falls back to a normal summon there.
+- [ ] 5. (S) Fixes 1, 2 and 3 above are only on 1-20-1; main (1.4.0) needs them too.
+- [ ] 6. (R) The git-ignored `CLAUDE.md` says `tags/entity_type/`; 1.20.1 uses `entity_types/`.
+
+## Checked and fine
+- Unforced mount respects `canRide`/`canAddPassenger`; the Forge mount event fired even when forced. `old.stopRiding()` before `teleportTo` is required.
+- Cross-dimension: `changeDimension` unrides and adds the new entity first; the room check uses the destination level.
+- Snapshot path mounts after `addFreshEntity`; saddle state loads before the check; revived pets are healed first; loot-stripped death snapshots without a saddle fall back to a normal summon.
+- Camel `isTamed()` is true; llamas are denylisted; pigs and striders need a saddle.
+- Networking, codec default, config sync and checkbox layout unchanged from the 1.4.0 audit and still correct.
+- Logging out while mounted saves the pet as the player's root vehicle with the same revision, so it isn't culled. Worth a manual test since auto-mount makes it common.

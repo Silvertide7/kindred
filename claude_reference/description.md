@@ -72,14 +72,14 @@ A clean inventory-style screen for managing your bonds.
 
 Server behavior lives in `kindred-server.toml`, and client options in `kindred-client.toml`:
 
-| Category    |Knobs                                                                                |
-| ----------- |------------------------------------------------------------------------------------ |
-| <strong>Bonding</strong> |starting bonds per player, mount-only mode, XP level cost per bond, rename toggle, always-visible pet nametags |
+| Category  |Knobs                                                                                                                          |
+| --------- |------------------------------------------------------------------------------------------------------------------------------ |
+| <strong>Bonding</strong> |starting bonds per player, mount-only mode, XP level cost per bond, rename toggle, always-visible pet nametags                 |
 | <strong>Summoning</strong> |walk vs. teleport range, walk speed, cross-dimensional toggle, space-required toggle, summon while swimming, Auto-Mount toggle |
-| <strong>Cooldowns</strong> |per-bond summon cooldown, global per-player summon cooldown                          |
-| <strong>Death</strong> |permadeath toggle, loot drop toggle, revival cooldown                                |
-| <strong>Input</strong> |hold-to-summon seconds, hold-to-dismiss seconds, dismiss toggle, cancel-on-damage    |
-| <strong>Client</strong> |hold bar position, vanilla-style UI                                                  |
+| <strong>Cooldowns</strong> |per-bond summon cooldown, global per-player summon cooldown                                                                    |
+| <strong>Death</strong> |permadeath toggle, loot drop toggle, revival cooldown                                                                          |
+| <strong>Input</strong> |hold-to-summon seconds, hold-to-dismiss seconds, dismiss toggle, cancel-on-damage                                              |
+| <strong>Client</strong> |hold bar position, vanilla-style UI                                                                                            |
 
 ### Datapack control
 
@@ -105,7 +105,7 @@ For server admins and debugging:
 /kindred claim                — claim the entity at your crosshair
 /kindred list                 — list your bonds with indices
 /kindred summon <index>       — summon a bond
-/kindred dismiss <index>      — recall the active pet
+/kindred dismiss <index>      — dismiss a bond
 /kindred break <index>        — break a bond
 /kindred active <index|none>  — set or clear the active pet
 ```
